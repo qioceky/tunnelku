@@ -199,12 +199,12 @@ class SshTunnel(
             override fun getOutputStream(socket: Socket): OutputStream = socket.getOutputStream()
         })
         // Daemon thread agar channel reader tidak menahan proses.
-        sess.isDaemonThread = true
+        sess.setDaemonThread(true)
         sess.connect(timeoutMs)
         session = sess
         val fp = try {
             val info = sess.hostKey
-            if (info != null) Base64.getEncoder().encodeToString(info.key).take(24) + "…" else "?"
+            if (info != null) info.key.take(24) + "…" else "?"
         } catch (e: Exception) { "?" }
         log("SSH terhubung & terautentikasi (${profile.username}@${profile.host}:${profile.port}), hostkey $fp")
     }
@@ -215,8 +215,8 @@ class SshTunnel(
         val channel = sess.openChannel("direct-tcpip") as ChannelDirectTCPIP
         channel.setHost(host)
         channel.setPort(port)
-        channel.setOriginatorIPAddress("127.0.0.1")
-        channel.setOriginatorPort(0)
+        channel.setOrgIPAddress("127.0.0.1")
+        channel.setOrgPort(0)
         channel.connect(10_000)
         return channel
     }
