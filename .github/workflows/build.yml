@@ -1,0 +1,88 @@
+name: build-tunnelku
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: "Install SDK packages (compileSdk 35)"
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'app/build.gradle') }}
+
+      # TunnelKu: keystore tetap (JKS) dari secret sejak rilis pertama.
+      - name: Pulihkan keystore tetap dari secret
+        env:
+          TUNNELKU_KEYSTORE_BASE64: ${{ secrets.TUNNELKU_KEYSTORE_BASE64 }}
+          TUNNELKU_KEYSTORE_PASSWORD: ${{ secrets.TUNNELKU_KEYSTORE_PASSWORD }}
+          TUNNELKU_KEY_ALIAS: ${{ secrets.TUNNELKU_KEY_ALIAS }}
+          TUNNELKU_KEY_PASSWORD: ${{ secrets.TUNNELKU_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TUNNELKU_KEYSTORE_BASE64:-}" ]; then
+            echo "::error::Secret TUNNELKU_KEYSTORE_BASE64 belum diisi — build dibatalkan agar tidak bertanda tangan acak."
+            exit 1
+          fi
+          mkdir -p "$HOME/.android"
+          printf '%s' "$TUNNELKU_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/tunnelku.keystore"
+          test -s "$HOME/.android/tunnelku.keystore"
+          {
+            echo "TUNNELKU_STORE_FILE=$HOME/.android/tunnelku.keystore"
+            echo "TUNNELKU_STORE_PASSWORD=$TUNNELKU_KEYSTORE_PASSWORD"
+            echo "TUNNELKU_KEY_ALIAS=$TUNNELKU_KEY_ALIAS"
+            echo "TUNNELKU_KEY_PASSWORD=$TUNNELKU_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+          echo "Keystore tetap dipulihkan ($(stat -c%s "$HOME/.android/tunnelku.keystore") byte)."
+
+      - name: Build release APK
+        run: ./gradlew :app:assembleRelease --stacktrace
+
+      - name: Verifikasi APK (paket, versi, sidik jari penanda tangan)
+        env:
+          EXPECTED_SHA256: "3978BE01798CA1A7598115BBA6089BA13DA16E2D9FCF9C8940DDEB1F5BC6440F"
+        run: |
+          set -euo pipefail
+          APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
+          test -n "$APK"
+          echo "APK: $APK"
+          ls -lh "$APK"
+          sha256sum "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$APK" | head -3
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump permissions "$APK"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          echo "--- apksigner verify ---"
+          "$APKSIGNER" verify --print-certs "$APK"
+          FP=$("$APKSIGNER" verify --print-certs "$APK" | grep -i "SHA-256 digest" | head -1 | awk '{print $NF}' | tr -d ':' | tr 'a-f' 'A-F')
+          echo "Fingerprint SHA-256: $FP"
+          test -n "$FP"
+          if [ "$FP" != "$EXPECTED_SHA256" ]; then
+            echo "::error::Fingerprint ($FP) tidak cocok dengan keystore yang di-pin ($EXPECTED_SHA256)."
+            exit 1
+          fi
+          echo "Fingerprint COCOK dengan keystore yang di-pin."
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tunnelku-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error

@@ -1,0 +1,73 @@
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.jetbrains.kotlin.android)
+    alias(libs.plugins.jetbrains.kotlin.compose)
+}
+
+android {
+    namespace 'id.tunnelku'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "id.tunnelku"
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName "0.1.0"
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
+    signingConfigs {
+        // TunnelKu: keystore tetap (JKS) dari secret CI sejak rilis pertama.
+        pinned {
+            storeFile file(System.getenv("TUNNELKU_STORE_FILE") ?: "/nonexistent/tunnelku-pinned.keystore")
+            storePassword System.getenv("TUNNELKU_STORE_PASSWORD") ?: "android"
+            keyAlias System.getenv("TUNNELKU_KEY_ALIAS") ?: "tunnelku"
+            keyPassword System.getenv("TUNNELKU_KEY_PASSWORD") ?: "android"
+            storeType "jks"
+        }
+    }
+
+    buildTypes {
+        release {
+            if (System.getenv("TUNNELKU_STORE_FILE")) {
+                signingConfig signingConfigs.pinned
+            }
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            if (System.getenv("TUNNELKU_STORE_FILE")) {
+                signingConfig signingConfigs.pinned
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    implementation libs.core.ktx
+    implementation libs.activity.compose
+    implementation libs.lifecycle.viewmodel.compose
+    implementation libs.lifecycle.runtime.compose
+    implementation platform(libs.compose.bom)
+    implementation libs.compose.ui
+    implementation libs.compose.ui.graphics
+    implementation libs.compose.ui.tooling.preview
+    implementation libs.compose.material3
+    debugImplementation libs.compose.ui.tooling
+    // SSH client (fork JSch yang terawat) — mesin mode SSH v0.1.
+    implementation 'com.github.mwiede:jsch:0.2.21'
+    testImplementation libs.junit
+}
