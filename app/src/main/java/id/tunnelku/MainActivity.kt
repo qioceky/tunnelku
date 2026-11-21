@@ -15,6 +15,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,7 +24,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -68,6 +72,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import id.tunnelku.model.ProfileStore
+import id.tunnelku.ui.Fa
+import id.tunnelku.ui.FaIcon
 import id.tunnelku.model.SettingsStore
 import id.tunnelku.model.SshProfile
 import id.tunnelku.vpn.LogBus
@@ -214,8 +220,14 @@ fun TunnelKuApp(onBgModeChanged: () -> Unit) {
         // lapisan penggelap agar teks terbaca
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dim)))
 
-        Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(34.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.25f))
+                        .border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) { FaIcon(Fa.TOWER, size = 15.sp, color = onGlass) }
+                Spacer(Modifier.size(8.dp))
                 Text("TunnelKu", color = onGlass, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
                 Spacer(Modifier.size(8.dp))
                 Box(
@@ -223,7 +235,7 @@ fun TunnelKuApp(onBgModeChanged: () -> Unit) {
                         .border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape)
                         .padding(horizontal = 8.dp, vertical = 3.dp),
                 ) {
-                    Text("v0.1 · SSH", color = onGlass, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    Text("v0.1.1 · SSH", color = onGlass, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -286,15 +298,26 @@ fun TunnelKuApp(onBgModeChanged: () -> Unit) {
                     .padding(vertical = 10.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
-                listOf("Beranda", "Profil", "Log", "Atur").forEachIndexed { i, label ->
-                    Text(
-                        label,
-                        color = onGlass,
-                        fontWeight = if (tab == i && editing == null && !creatingNew) FontWeight.ExtraBold else FontWeight.Normal,
-                        fontSize = 13.sp,
+                listOf(
+                    Triple("Beranda", Fa.HOUSE, 0),
+                    Triple("Profil", Fa.SERVER, 1),
+                    Triple("Log", Fa.TERMINAL, 2),
+                    Triple("Atur", Fa.GEAR, 3),
+                ).forEach { (label, icon, i) ->
+                    val selected = tab == i && editing == null && !creatingNew
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.clickable { tab = i; editing = null; creatingNew = false }
-                            .padding(horizontal = 8.dp, vertical = 2.dp),
-                    )
+                            .padding(horizontal = 10.dp, vertical = 2.dp),
+                    ) {
+                        FaIcon(icon, size = 16.sp, color = if (selected) onGlass else onGlass.copy(alpha = 0.65f))
+                        Text(
+                            label,
+                            color = if (selected) onGlass else onGlass.copy(alpha = 0.65f),
+                            fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Normal,
+                            fontSize = 12.sp,
+                        )
+                    }
                 }
             }
         }
@@ -351,16 +374,29 @@ private fun HomeScreen(onGlass: Color, glass: Float, goProfiles: () -> Unit) {
                     )
                 }
                 Spacer(Modifier.height(8.dp))
-                Text(
-                    when (status) {
-                        TunnelStatus.CONNECTED -> "● TERHUBUNG"
-                        TunnelStatus.CONNECTING -> "● MENGHUBUNGKAN…"
-                        TunnelStatus.DISCONNECTING -> "● MEMUTUSKAN…"
-                        TunnelStatus.ERROR -> "● GALAT — lihat Log"
-                        else -> "○ TERPUTUS"
-                    },
-                    color = onGlass, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 13.sp,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FaIcon(
+                        if (status == TunnelStatus.CONNECTED) Fa.CIRCLE_CHECK else Fa.CIRCLE,
+                        size = 12.sp,
+                        color = when (status) {
+                            TunnelStatus.CONNECTED -> Color(0xFF2EE66B)
+                            TunnelStatus.CONNECTING, TunnelStatus.DISCONNECTING -> Color(0xFFFFC44D)
+                            TunnelStatus.ERROR -> Color(0xFFFF5D5D)
+                            else -> onGlass.copy(alpha = 0.6f)
+                        },
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        when (status) {
+                            TunnelStatus.CONNECTED -> "TERHUBUNG"
+                            TunnelStatus.CONNECTING -> "MENGHUBUNGKAN…"
+                            TunnelStatus.DISCONNECTING -> "MEMUTUSKAN…"
+                            TunnelStatus.ERROR -> "GALAT — lihat Log"
+                            else -> "TERPUTUS"
+                        },
+                        color = onGlass, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                    )
+                }
                 Text(
                     "↓ ${fmtBytes(traffic.first)} · ↑ ${fmtBytes(traffic.second)}",
                     color = onGlass.copy(alpha = 0.9f), fontSize = 12.sp,
@@ -370,7 +406,10 @@ private fun HomeScreen(onGlass: Color, glass: Float, goProfiles: () -> Unit) {
         Spacer(Modifier.height(10.dp))
 
         GlassCard(glass, Modifier.fillMaxWidth().clickable { goProfiles() }) {
-            Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FaIcon(Fa.SERVER, size = 16.sp, color = onGlass)
+                Spacer(Modifier.width(10.dp))
+                Column {
                 Text(
                     active?.let { "SSH · ${it.name}" } ?: "Belum ada profil",
                     color = onGlass, fontWeight = FontWeight.Bold, fontSize = 14.sp,
@@ -384,11 +423,15 @@ private fun HomeScreen(onGlass: Color, glass: Float, goProfiles: () -> Unit) {
                     } ?: "Ketuk untuk membuat profil SSH pertamamu",
                     color = onGlass.copy(alpha = 0.85f), fontSize = 12.sp,
                 )
+                }
             }
         }
         Spacer(Modifier.height(10.dp))
 
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             listOf("SSH" to true, "SlowDNS" to false, "UDP" to false, "OVPN" to false, "Xray" to false).forEach { (label, on) ->
                 Box(
                     Modifier.clip(RoundedCornerShape(999.dp))
@@ -431,6 +474,8 @@ private fun HomeScreen(onGlass: Color, glass: Float, goProfiles: () -> Unit) {
             shape = RoundedCornerShape(18.dp),
             modifier = Modifier.fillMaxWidth().height(54.dp),
         ) {
+            FaIcon(Fa.POWER, size = 16.sp, color = Color.White)
+            Spacer(Modifier.width(8.dp))
             Text(if (isOn) "PUTUSKAN" else "SAMBUNGKAN", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
         }
         Spacer(Modifier.height(8.dp))
@@ -466,6 +511,8 @@ private fun ProfilesScreen(
                 GlassCard(glass, Modifier.fillMaxWidth().clickable { onEdit(p) }) {
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            FaIcon(Fa.SERVER, size = 13.sp, color = onGlass.copy(alpha = 0.8f))
+                            Spacer(Modifier.width(8.dp))
                             Text(p.name, color = onGlass, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             if (p.id == activeId) {
                                 Spacer(Modifier.size(8.dp))
@@ -492,7 +539,11 @@ private fun ProfilesScreen(
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0A162C).copy(alpha = 0.78f), contentColor = Color.White),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth().height(50.dp),
-        ) { Text("+ Profil SSH Baru", fontWeight = FontWeight.Bold) }
+        ) {
+            FaIcon(Fa.PLUS, size = 14.sp, color = Color.White)
+            Spacer(Modifier.width(8.dp))
+            Text("Profil SSH Baru", fontWeight = FontWeight.Bold)
+        }
     }
 }
 
@@ -630,12 +681,20 @@ private fun LogScreen(onGlass: Color, glass: Float) {
                 onClick = { clipboard.setText(AnnotatedString(logs.joinToString("\n"))) },
                 colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.25f), contentColor = onGlass),
                 shape = RoundedCornerShape(12.dp),
-            ) { Text("Salin Log") }
+            ) {
+                FaIcon(Fa.COPY, size = 13.sp, color = onGlass)
+                Spacer(Modifier.width(6.dp))
+                Text("Salin Log")
+            }
             Button(
                 onClick = { LogBus.clearLogs() },
                 colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.25f), contentColor = onGlass),
                 shape = RoundedCornerShape(12.dp),
-            ) { Text("Bersihkan") }
+            ) {
+                FaIcon(Fa.TRASH, size = 13.sp, color = onGlass)
+                Spacer(Modifier.width(6.dp))
+                Text("Bersihkan")
+            }
         }
         Spacer(Modifier.height(10.dp))
         GlassCard(glass, Modifier.fillMaxSize()) {
@@ -684,20 +743,22 @@ private fun SettingsScreen(
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Latar Belakang", color = onGlass, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
         listOf(
-            SettingsStore.BG_WALLPAPER to ("Tembus wallpaper HP" to "Latar app = wallpaper home kamu"),
-            SettingsStore.BG_CUSTOM to ("Gambar custom" to "Foto pilihanmu dari galeri"),
-            SettingsStore.BG_GRADIENT to ("Gradasi bawaan" to "Mesh biru–ungu–toska TunnelKu"),
-        ).forEach { (mode, texts) ->
+            Triple(SettingsStore.BG_WALLPAPER, Fa.WINDOW, "Tembus wallpaper HP" to "Latar app = wallpaper home kamu"),
+            Triple(SettingsStore.BG_CUSTOM, Fa.IMAGE, "Gambar custom" to "Foto pilihanmu dari galeri"),
+            Triple(SettingsStore.BG_GRADIENT, Fa.PALETTE, "Gradasi bawaan" to "Mesh biru–ungu–toska TunnelKu"),
+        ).forEach { (mode, icon, texts) ->
             GlassCard(
                 glass,
                 Modifier.fillMaxWidth().clickable { onBgMode(mode) },
             ) {
-                Column {
-                    Text(
-                        (if (bgMode == mode) "◉ " else "○ ") + texts.first,
-                        color = onGlass, fontWeight = FontWeight.Bold, fontSize = 13.sp,
-                    )
-                    Text(texts.second, color = onGlass.copy(alpha = 0.85f), fontSize = 12.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FaIcon(icon, size = 17.sp, color = onGlass)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(texts.first, color = onGlass, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(texts.second, color = onGlass.copy(alpha = 0.85f), fontSize = 12.sp)
+                    }
+                    if (bgMode == mode) FaIcon(Fa.CIRCLE_CHECK, size = 15.sp, color = Color(0xFF2EE66B))
                 }
             }
         }
@@ -707,7 +768,11 @@ private fun SettingsScreen(
                 colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.25f), contentColor = onGlass),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Pilih Gambar dari Galeri") }
+            ) {
+                FaIcon(Fa.IMAGE, size = 14.sp, color = onGlass)
+                Spacer(Modifier.width(8.dp))
+                Text("Pilih Gambar dari Galeri")
+            }
         }
 
         Text("Kekuatan blur kaca: ${blur.toInt()}", color = onGlass, fontSize = 12.sp)
@@ -727,7 +792,7 @@ private fun SettingsScreen(
 
         Spacer(Modifier.height(8.dp))
         Text(
-            "TunnelKu v0.1.0 · id.tunnelku\nAplikasi tunnel versi kita sendiri — clean-room, tanpa server bawaan, tanpa iklan/tracker. Semua server dari profilmu.",
+            "TunnelKu v0.1.1 · id.tunnelku\nIkon: Font Awesome Free 6.5.2 (CC BY 4.0).\nAplikasi tunnel versi kita sendiri — clean-room, tanpa server bawaan, tanpa iklan/tracker. Semua server dari profilmu.",
             color = onGlass.copy(alpha = 0.8f), fontSize = 11.sp,
         )
         Spacer(Modifier.height(16.dp))
