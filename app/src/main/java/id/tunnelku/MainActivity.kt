@@ -568,6 +568,7 @@ private fun ProfileEditor(
     onDelete: (SshProfile) -> Unit,
 ) {
     val base = initial ?: SshProfile()
+    val ctx = LocalContext.current
     var mode by remember { mutableStateOf(base.mode) }
     var name by remember { mutableStateOf(base.name) }
     var host by remember { mutableStateOf(base.host) }
