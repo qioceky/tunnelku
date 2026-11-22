@@ -80,6 +80,8 @@ jobs:
           mkdir -p ../app/libs
           gomobile bind -target=android/arm64,android/arm -androidapi 26 -o ../app/libs/engine.aar .
           ls -lh ../app/libs/engine.aar
+          unzip -l ../app/libs/engine.aar | head -25
+          mkdir -p /tmp/aarx && cd /tmp/aarx && unzip -o -q "$GITHUB_WORKSPACE/app/libs/engine.aar" classes.jar && "$JAVA_HOME/bin/jar" tf classes.jar | head -20
 
       - name: Build release APK
         run: ./gradlew :app:assembleRelease --stacktrace
