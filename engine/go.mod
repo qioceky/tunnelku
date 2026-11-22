@@ -7,6 +7,7 @@ require (
 	github.com/quic-go/quic-go v0.34.0
 	github.com/xtaci/kcp-go/v5 v5.6.8
 	github.com/xtaci/smux v1.5.24
+	golang.org/x/mobile v0.0.0-20261117202452-47699113848a
 	www.bamsoftware.com/git/dnstt.git v0.0.0-00010101000000-000000000000
 )
 
@@ -40,12 +41,13 @@ require (
 	github.com/txthinking/runnergroup v0.0.0-20210608031112-152c7c4432bf // indirect
 	github.com/txthinking/socks5 v0.0.0-20220212043548-414499347d4a // indirect
 	github.com/txthinking/x v0.0.0-20210326105829-476fab902fbe // indirect
-	golang.org/x/crypto v0.21.0 // indirect
+	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/exp v0.0.0-20230131160201-f062dba9d201 // indirect
-	golang.org/x/mod v0.8.0 // indirect
-	golang.org/x/net v0.23.0 // indirect
-	golang.org/x/sys v0.18.0 // indirect
-	golang.org/x/tools v0.6.0 // indirect
+	golang.org/x/mod v0.43.0 // indirect
+	golang.org/x/net v0.63.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/tools v0.53.0 // indirect
 )
 
 replace github.com/quic-go/quic-go => github.com/apernet/quic-go v0.34.1-0.20230507231629-ec008b7e8473
