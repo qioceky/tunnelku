@@ -28,6 +28,7 @@ class TunnelVpnService : VpnService() {
         private const val NOTIF_ID = 41
         private const val SOCKS_PORT = 11080
         private const val DNSTT_PORT = 11081
+        private const val XRAY_SOCKS_PORT = 11082
         @Volatile var instance: TunnelVpnService? = null
     }
 
@@ -38,6 +39,7 @@ class TunnelVpnService : VpnService() {
     private var forwarder: TunForwarder? = null
     @Volatile private var engineDnstt = false
     @Volatile private var engineHysteria = false
+    @Volatile private var engineXray = false
     private var udpgwProvider: UdpGwRelayProvider? = null
     private var socksUdpRelay: SocksUdpRelay? = null
     private var worker: Thread? = null
@@ -135,6 +137,23 @@ class TunnelVpnService : VpnService() {
                 socksUdpRelay = relay
                 udpProvider = { relay }
                 aliveCheck = { engineHysteria }
+            }
+            SshProfile.MODE_XRAY -> {
+                LogBus.log("Menghubungkan (Xray/${profile.xrayProtocol}): ${profile.name} (${profile.host}:${profile.port})")
+                Engine.startXray(XraySupport.buildParamsJson(profile, XRAY_SOCKS_PORT))
+                engineXray = true
+                LogBus.log("Core Xray aktif, SOCKS5 lokal :$XRAY_SOCKS_PORT")
+                transport = SocksStreamTransport(XRAY_SOCKS_PORT)
+                val relay = SocksUdpRelay(
+                    XRAY_SOCKS_PORT,
+                    { s -> protect(s) },
+                    { srcIp, srcPort, dstIp, dstPort, payload ->
+                        forwarder?.injectUdpReply(srcIp, srcPort, dstIp, dstPort, payload)
+                    },
+                ) { LogBus.log(it) }
+                socksUdpRelay = relay
+                udpProvider = { relay }
+                aliveCheck = { engineXray }
             }
             SshProfile.MODE_SLOWDNS -> {
                 LogBus.log("Menghubungkan (SlowDNS): ${profile.name} — resolver ${profile.dnsttResolver}, domain ${profile.dnsttDomain}")
@@ -234,6 +253,10 @@ class TunnelVpnService : VpnService() {
         if (engineHysteria) {
             try { Engine.stopHysteria() } catch (e: Exception) { /* abaikan */ }
             engineHysteria = false
+        }
+        if (engineXray) {
+            try { Engine.stopXray() } catch (e: Exception) { /* abaikan */ }
+            engineXray = false
         }
     }
 

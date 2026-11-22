@@ -36,6 +36,24 @@ data class SshProfile(
     val hyObfs: String = "",
     val hySni: String = "",
     val hyInsecure: Boolean = true,
+    val xrayProtocol: String = "vless", // vless|vmess|trojan|ss
+    val xrayUuid: String = "",
+    val xrayPassword: String = "",
+    val xrayMethod: String = "aes-256-gcm",
+    val xrayFlow: String = "",
+    val xraySecurity: String = "tls", // none|tls|reality
+    val xraySni: String = "",
+    val xrayFingerprint: String = "chrome",
+    val xrayAlpn: String = "",
+    val xrayPublicKey: String = "",
+    val xrayShortId: String = "",
+    val xraySpiderX: String = "",
+    val xrayNetwork: String = "tcp", // tcp|ws|grpc
+    val xrayWsPath: String = "/",
+    val xrayWsHost: String = "",
+    val xrayGrpcService: String = "",
+    val xrayAlterId: Int = 0,
+    val xrayVmessSecurity: String = "auto",
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("name", name); put("host", host); put("port", port)
@@ -51,12 +69,20 @@ data class SshProfile(
         put("mode", mode)
         put("dnsttDomain", dnsttDomain); put("dnsttPubKey", dnsttPubKey); put("dnsttResolver", dnsttResolver)
         put("hyObfs", hyObfs); put("hySni", hySni); put("hyInsecure", hyInsecure)
+        put("xrayProtocol", xrayProtocol); put("xrayUuid", xrayUuid); put("xrayPassword", xrayPassword)
+        put("xrayMethod", xrayMethod); put("xrayFlow", xrayFlow); put("xraySecurity", xraySecurity)
+        put("xraySni", xraySni); put("xrayFingerprint", xrayFingerprint); put("xrayAlpn", xrayAlpn)
+        put("xrayPublicKey", xrayPublicKey); put("xrayShortId", xrayShortId); put("xraySpiderX", xraySpiderX)
+        put("xrayNetwork", xrayNetwork); put("xrayWsPath", xrayWsPath); put("xrayWsHost", xrayWsHost)
+        put("xrayGrpcService", xrayGrpcService); put("xrayAlterId", xrayAlterId)
+        put("xrayVmessSecurity", xrayVmessSecurity)
     }
 
     companion object {
         const val MODE_SSH = "SSH"
         const val MODE_SLOWDNS = "SLOWDNS"
         const val MODE_UDP_CUSTOM = "UDP_CUSTOM"
+        const val MODE_XRAY = "XRAY"
 
         fun fromJson(o: JSONObject): SshProfile = SshProfile(
             id = o.optString("id", UUID.randomUUID().toString()),
@@ -88,6 +114,24 @@ data class SshProfile(
             hyObfs = o.optString("hyObfs", ""),
             hySni = o.optString("hySni", ""),
             hyInsecure = o.optBoolean("hyInsecure", true),
+            xrayProtocol = o.optString("xrayProtocol", "vless"),
+            xrayUuid = o.optString("xrayUuid", ""),
+            xrayPassword = o.optString("xrayPassword", ""),
+            xrayMethod = o.optString("xrayMethod", "aes-256-gcm"),
+            xrayFlow = o.optString("xrayFlow", ""),
+            xraySecurity = o.optString("xraySecurity", "tls"),
+            xraySni = o.optString("xraySni", ""),
+            xrayFingerprint = o.optString("xrayFingerprint", "chrome"),
+            xrayAlpn = o.optString("xrayAlpn", ""),
+            xrayPublicKey = o.optString("xrayPublicKey", ""),
+            xrayShortId = o.optString("xrayShortId", ""),
+            xraySpiderX = o.optString("xraySpiderX", ""),
+            xrayNetwork = o.optString("xrayNetwork", "tcp"),
+            xrayWsPath = o.optString("xrayWsPath", "/"),
+            xrayWsHost = o.optString("xrayWsHost", ""),
+            xrayGrpcService = o.optString("xrayGrpcService", ""),
+            xrayAlterId = o.optInt("xrayAlterId", 0),
+            xrayVmessSecurity = o.optString("xrayVmessSecurity", "auto"),
         )
     }
 }

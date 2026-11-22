@@ -24,3 +24,10 @@ func StartHysteria(server, auth, obfs, sni string, insecure bool, socks string) 
 
 // StopHysteria menghentikan klien Hysteria.
 func StopHysteria() { stopHysteria() }
+
+// StartXray memulai core Xray dari config JSON (inbound SOCKS5 lokal +
+// outbound sesuai profil). socksPort di dalam config menentukan port lokal.
+func StartXray(configJSON string) error { return startXray(configJSON) }
+
+// StopXray menghentikan core Xray.
+func StopXray() { stopXray() }
