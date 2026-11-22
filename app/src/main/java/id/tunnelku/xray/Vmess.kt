@@ -18,6 +18,8 @@ class VmessProto(
     private val dialer: XrayDialer,
     private val random: SecureRandom = SecureRandom(),
     private val timeSec: () -> Long = { System.currentTimeMillis() / 1000 },
+    /** Mode legacy (alterId > 0): header HmacMD5 + AES-CFB ala VMess lama XVEON. */
+    private val legacy: Boolean = false,
 ) : XrayProto {
 
     private val uuid: ByteArray = Crypto.parseUuid(profile.xrayUuid)
@@ -30,19 +32,32 @@ class VmessProto(
         else -> 3 // auto → AES-128-GCM
     }
 
-    init {
-        require(profile.xrayAlterId == 0) { "VMess alterId > 0 tidak didukung (hanya AEAD/alterId 0)" }
-    }
-
     private inner class Session(
         val reqKey: ByteArray,
         val reqIV: ByteArray,
         val respV: Byte,
     ) {
-        val respKey: ByteArray = Crypto.sha256(reqKey).copyOf(16)
-        val respIV: ByteArray = Crypto.sha256(reqIV).copyOf(16)
+        val respKey: ByteArray = if (legacy) Crypto.md5(reqKey) else Crypto.sha256(reqKey).copyOf(16)
+        val respIV: ByteArray = if (legacy) Crypto.md5(reqIV) else Crypto.sha256(reqIV).copyOf(16)
 
         fun headerBytes(command: Int, host: String, port: Int): ByteArray {
+            if (legacy) return legacyHeaderBytes(command, host, port)
+            return sealHeader(cmdKey, plainHeader(command, host, port), timeSec(), random)
+        }
+
+        /** Header legacy: [auth HmacMD5 16B][plaintext header terenkripsi AES-CFB]. */
+        private fun legacyHeaderBytes(command: Int, host: String, port: Int): ByteArray {
+            val ts = timeSec()
+            val tsBytes = ByteArray(8) { i -> (ts shr (56 - 8 * i)).toByte() }
+            val auth = Crypto.hmac("HmacMD5", uuid, tsBytes)
+            val key = Crypto.md5(uuid + CMD_KEY_SALT)
+            val ivSeed = ByteArray(32) { i -> tsBytes[i % 8] }
+            val iv = Crypto.md5(ivSeed)
+            val enc = Crypto.aesCfb(key, iv, plainHeader(command, host, port), encrypt = true)
+            return auth + enc
+        }
+
+        fun plainHeader(command: Int, host: String, port: Int): ByteArray {
             val paddingLen = random.nextInt(16)
             val plain = ArrayList<Byte>()
             plain.add(1) // versi
@@ -62,10 +77,21 @@ class VmessProto(
             val full = body + byteArrayOf(
                 (fnv ushr 24).toByte(), (fnv ushr 16).toByte(), (fnv ushr 8).toByte(), fnv.toByte(),
             )
-            return sealHeader(cmdKey, full, timeSec(), random)
+            return full
         }
 
         fun readResponseHeader(inp: InputStream) {
+            if (legacy) {
+                // Blok 4 byte AES-CFB: byte0 = respV, byte3 = jumlah byte ekstra yang dilewati.
+                val block = Addr.readN(inp, 4)
+                val plain = Crypto.aesCfb(respKey, respIV, block, encrypt = false)
+                if (plain[0] != respV) {
+                    throw IllegalStateException("VMess legacy: byte verifikasi respons tidak cocok")
+                }
+                val skip = plain[3].toInt() and 0xFF
+                if (skip > 0) Addr.readN(inp, skip)
+                return
+            }
             val lenBlock = Addr.readN(inp, 18)
             val lenKey = VmessKdf.kdf16Str(respKey, SALT_RESP_LEN_KEY)
             val lenIV = VmessKdf.kdfStr(respIV, SALT_RESP_LEN_IV).copyOf(12)
@@ -146,7 +172,7 @@ class VmessProto(
         }
     }
 
-    override fun openUdp(host: String, port: Int, onReply: (ByteArray) -> Unit): UdpSession {
+    override fun openUdp(host: String, port: Int, onReply: (String, Int, ByteArray) -> Unit): UdpSession {
         val s = dialer.dialServer()
         val session = newSession()
         s.output.write(session.headerBytes(2, host, port))
@@ -159,7 +185,7 @@ class VmessProto(
                 val reader = session.reader(s.input)
                 while (alive.get()) {
                     val chunk = reader.readChunk() ?: break
-                    if (chunk.isNotEmpty()) onReply(chunk)
+                    if (chunk.isNotEmpty()) onReply(host, port, chunk)
                 }
             } catch (e: Exception) {
                 // sesi selesai

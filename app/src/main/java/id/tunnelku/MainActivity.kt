@@ -242,7 +242,7 @@ fun TunnelKuApp(onBgModeChanged: () -> Unit) {
                         .border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape)
                         .padding(horizontal = 8.dp, vertical = 3.dp),
                 ) {
-                    Text("v0.5", color = onGlass, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    Text("v0.6", color = onGlass, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -632,7 +632,7 @@ private fun ProfileEditor(
         }
         Text(
             when (mode) {
-                SshProfile.MODE_XRAY -> "Klien Xray Kotlin bawaan: VLESS / VMess / Trojan / Shadowsocks (TCP/WS + TLS). Tempel link berbagi untuk mengisi otomatis."
+                SshProfile.MODE_XRAY -> "Klien Xray Kotlin bawaan: VLESS / VMess (AEAD + legacy) / Trojan / Shadowsocks (TCP/WS + TLS), fronting proxy & payload ala injector didukung. Tempel link berbagi untuk mengisi otomatis."
                 else -> "SSH langsung / lewat proxy, payload, dan TLS/SNI."
             },
             color = onGlass.copy(alpha = 0.85f), fontSize = 11.sp,
@@ -682,10 +682,10 @@ private fun ProfileEditor(
                 GlassTextField(xrUuid, { xrUuid = it }, "UUID", onGlass)
             }
             if (xrProto == "vless") {
-                GlassTextField(xrFlow, { xrFlow = it }, "Flow (kosongkan — vision belum didukung)", onGlass)
+                GlassTextField(xrFlow, { xrFlow = it }, "Flow (diabaikan — disambung sebagai VLESS polos)", onGlass)
             }
             if (xrProto == "vmess") {
-                GlassTextField(xrAlterId, { xrAlterId = it }, "AlterID (Xray hanya 0)", onGlass, numeric = true)
+                GlassTextField(xrAlterId, { xrAlterId = it }, "AlterID (0 = AEAD; >0 = legacy, dicoba otomatis)", onGlass, numeric = true)
                 GlassTextField(xrVmessSecurity, { xrVmessSecurity = it }, "Security VMess (auto)", onGlass)
             }
             if (xrProto == "trojan" || xrProto == "ss") {
@@ -755,6 +755,7 @@ private fun ProfileEditor(
             GlassTextField(privateKey, { privateKey = it }, "Private key (PEM / OpenSSH)", onGlass, singleLine = false, minLines = 3)
             GlassTextField(keyPass, { keyPass = it }, "Passphrase key (opsional)", onGlass, password = true)
         }
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Proxy remote", color = onGlass, fontSize = 13.sp, modifier = Modifier.weight(1f))
             Switch(proxyOn, { proxyOn = it })
@@ -778,8 +779,9 @@ private fun ProfileEditor(
             Switch(payloadOn, { payloadOn = it })
         }
         if (payloadOn) {
-            GlassTextField(payload, { payload = it }, "Payload — [host] [host_port] [crlf] didukung", onGlass, singleLine = false, minLines = 3)
+            GlassTextField(payload, { payload = it }, "Payload — [host] [host_port] [sni] [crlf] [split] [delay_split] [rotate=a|b] didukung", onGlass, singleLine = false, minLines = 3)
         }
+        if (mode == SshProfile.MODE_SSH) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("TLS / SNI", color = onGlass, fontSize = 13.sp, modifier = Modifier.weight(1f))
             Switch(sniOn, { sniOn = it })
@@ -981,7 +983,7 @@ private fun SettingsScreen(
 
         Spacer(Modifier.height(8.dp))
         Text(
-            "TunnelKu v0.5.0 · id.tunnelku\nIkon: Font Awesome Free 6.5.2 (CC BY 4.0).\nAplikasi tunnel versi kita sendiri — clean-room, tanpa server bawaan, tanpa iklan/tracker. Semua server dari profilmu.",
+            "TunnelKu v0.6.0 · id.tunnelku\nIkon: Font Awesome Free 6.5.2 (CC BY 4.0).\nAplikasi tunnel versi kita sendiri — clean-room, tanpa server bawaan, tanpa iklan/tracker. Semua server dari profilmu.",
             color = onGlass.copy(alpha = 0.8f), fontSize = 11.sp,
         )
         Spacer(Modifier.height(16.dp))

@@ -7,3 +7,4 @@ host-test/go-ref/refcheck
 host-test/go-ws/gows
 research/
 verify-v*/
+host-test/go-legacy/legacyref

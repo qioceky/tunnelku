@@ -15,7 +15,7 @@ interface UdpSession {
 /** Klien protokol Xray (di atas transport yang sudah terhubung ke server). */
 interface XrayProto {
     fun openTcp(host: String, port: Int): DuplexStream
-    fun openUdp(host: String, port: Int, onReply: (ByteArray) -> Unit): UdpSession
+    fun openUdp(host: String, port: Int, onReply: (srcHost: String, srcPort: Int, payload: ByteArray) -> Unit): UdpSession
 }
 
 /** InputStream yang menjalankan [onFirstRead] sekali sebelum bacaan pertama (header respons malas). */
@@ -65,9 +65,8 @@ class VlessProto(
     private val uuid: ByteArray = Crypto.parseUuid(profile.xrayUuid)
 
     private fun header(command: Int, host: String, port: Int): ByteArray {
-        if (profile.xrayFlow == "xtls-rprx-vision") {
-            throw IllegalStateException("Flow xtls-rprx-vision belum didukung klien Kotlin")
-        }
+        // Flow (termasuk xtls-rprx-vision) diabaikan diam-diam seperti XVEON:
+        // addons selalu kosong, koneksi berjalan sebagai VLESS polos.
         val out = ArrayList<Byte>()
         out.add(0) // versi
         uuid.forEach { out.add(it) }
@@ -98,7 +97,7 @@ class VlessProto(
         return simpleStream(lazyIn, s.output) { s.close() }
     }
 
-    override fun openUdp(host: String, port: Int, onReply: (ByteArray) -> Unit): UdpSession {
+    override fun openUdp(host: String, port: Int, onReply: (srcHost: String, srcPort: Int, payload: ByteArray) -> Unit): UdpSession {
         val s = dialer.dialServer()
         s.output.write(header(2, host, port))
         s.output.flush()
@@ -110,7 +109,7 @@ class VlessProto(
                     val lb = Addr.readN(s.input, 2)
                     val len = ((lb[0].toInt() and 0xFF) shl 8) or (lb[1].toInt() and 0xFF)
                     if (len == 0) continue
-                    onReply(Addr.readN(s.input, len))
+                    onReply(host, port, Addr.readN(s.input, len))
                 }
             } catch (e: Exception) {
                 // sesi selesai
@@ -158,7 +157,7 @@ class TrojanProto(
         return s
     }
 
-    override fun openUdp(host: String, port: Int, onReply: (ByteArray) -> Unit): UdpSession {
+    override fun openUdp(host: String, port: Int, onReply: (srcHost: String, srcPort: Int, payload: ByteArray) -> Unit): UdpSession {
         val s = dialer.dialServer()
         s.output.write(header(0x03, host, port))
         s.output.flush()
@@ -166,11 +165,11 @@ class TrojanProto(
         thread(name = "tk-trojan-udp", isDaemon = true) {
             try {
                 while (alive.get()) {
-                    val (_, _) = Addr.readAddrFirst(s.input, domainType = 3, ipv6Type = 4)
+                    val (rHost, rPort) = Addr.readAddrFirst(s.input, domainType = 3, ipv6Type = 4)
                     val lb = Addr.readN(s.input, 2)
                     val len = ((lb[0].toInt() and 0xFF) shl 8) or (lb[1].toInt() and 0xFF)
                     Addr.readN(s.input, 2) // CRLF
-                    onReply(Addr.readN(s.input, len))
+                    onReply(rHost, rPort, Addr.readN(s.input, len))
                 }
             } catch (e: Exception) {
                 // sesi selesai

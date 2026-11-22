@@ -14,6 +14,17 @@ fun check(name: String, cond: Boolean, detail: String = "") {
 fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
 fun unhex(s: String) = ByteArray(s.length / 2) { s.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
 
+fun runLegacyRef(vararg args: String): String {
+    val pb = ProcessBuilder(listOf("/home/hatch/workspace/tunnelku/host-test/go-legacy/legacyref") + args)
+    pb.redirectErrorStream(false)
+    val p = pb.start()
+    val out = p.inputStream.readBytes().toString(Charsets.UTF_8)
+    val err = p.errorStream.readBytes().toString(Charsets.UTF_8)
+    val code = p.waitFor()
+    if (code != 0) throw IllegalStateException("legacyref ${args[0]} gagal ($code): $err")
+    return out
+}
+
 fun runRef(vararg args: String): String {
     val pb = ProcessBuilder(listOf("/home/hatch/workspace/tunnelku/host-test/go-ref/refcheck") + args)
     pb.redirectErrorStream(false)
@@ -42,7 +53,7 @@ class CaptureStream : DuplexStream {
 
 class FakeDialer(profile: SshProfile, private val stream: DuplexStream) :
     XrayDialer(profile, { true }, { true }, {}) {
-    override fun dialServer(): DuplexStream = stream
+    override fun dialServer(timeoutMs: Int): DuplexStream = stream
     override fun dialUdpSocket(): java.net.DatagramSocket = throw UnsupportedOperationException("udp socket tidak dipakai di uji ini")
 }
 
@@ -126,6 +137,33 @@ fun testVmess(secName: String, secInt: Int) {
     stream.close()
 }
 
+fun testVmessLegacy() {
+    val uuid = "b831381d-6324-4d53-ad4f-8cda48b30811"
+    val profile = SshProfile(xrayProtocol = "vmess", xrayUuid = uuid, xrayAlterId = 2, xrayVmessSecurity = "auto", xraySecurity = "none", xrayNetwork = "tcp")
+    val cap = CaptureStream()
+    val proto = VmessProto(profile, FakeDialer(profile, cap), legacy = true)
+    val stream = proto.openTcp("example.com", 80)
+    val payload = "HELLO-VMESS-LEGACY"
+    stream.output.write(payload.toByteArray())
+    stream.output.close()
+    val inF = tmpFile("vmess-legacy.bin", cap.snapshot())
+    val outF = File("/tmp/tk-test-vmess-legacy.out")
+    val res = runLegacyRef("legacy-rt", uuid, "3", inF.absolutePath, outF.absolutePath)
+    val lines = res.trim().lines()
+    check("vmess-legacy-header", lines.any { it.contains("addr=example.com") && it.contains("port=80") }, res)
+    check("vmess-legacy-payload", lines.any { it == "PAYLOAD " + hex(payload.toByteArray()) }, res)
+    cap.feed(outF.readBytes())
+    val got = ByteArray(13)
+    var off = 0
+    while (off < got.size) {
+        val n = stream.input.read(got, off, got.size - off)
+        if (n < 0) break
+        off += n
+    }
+    check("vmess-legacy-resp", String(got.copyOf(off)) == "RESP-OK-12345", "got=${String(got.copyOf(off))}")
+    stream.close()
+}
+
 fun testVmessUdp() {
     val uuid = "b831381d-6324-4d53-ad4f-8cda48b30811"
     val profile = SshProfile(xrayProtocol = "vmess", xrayUuid = uuid, xrayVmessSecurity = "auto", xraySecurity = "none", xrayNetwork = "tcp")
@@ -133,7 +171,7 @@ fun testVmessUdp() {
     val proto = VmessProto(profile, FakeDialer(profile, cap))
     val latch = CountDownLatch(1)
     val replyBox = arrayOfNulls<ByteArray>(1)
-    val session = proto.openUdp("8.8.8.8", 53) { reply ->
+    val session = proto.openUdp("8.8.8.8", 53) { _, _, reply ->
         replyBox[0] = reply
         latch.countDown()
     }
@@ -208,7 +246,7 @@ fun testVless() {
     val proto2 = VlessProto(profile, FakeDialer(profile, cap2))
     val latch = CountDownLatch(1)
     val box = arrayOfNulls<ByteArray>(1)
-    val sess = proto2.openUdp("8.8.8.8", 53) { box[0] = it; latch.countDown() }
+    val sess = proto2.openUdp("8.8.8.8", 53) { _, _, payload -> box[0] = payload; latch.countDown() }
     sess.send("PING".toByteArray())
     Thread.sleep(200)
     val snap = cap2.snapshot()
@@ -232,7 +270,7 @@ fun testTrojan() {
     val proto2 = TrojanProto(profile, FakeDialer(profile, cap2))
     val latch = CountDownLatch(1)
     val box = arrayOfNulls<ByteArray>(1)
-    val sess = proto2.openUdp("8.8.8.8", 53) { box[0] = it; latch.countDown() }
+    val sess = proto2.openUdp("8.8.8.8", 53) { _, _, payload -> box[0] = payload; latch.countDown() }
     sess.send("PING".toByteArray())
     Thread.sleep(200)
     val snap = cap2.snapshot()
@@ -282,7 +320,7 @@ fun main(args: Array<String>) {
     when (args.getOrNull(0)) {
         "ws" -> { testWsStdio(); return }
         "vectors" -> testVectors()
-        "vmess" -> { testVmess("auto", 3); testVmess("chacha20-poly1305", 4); testVmess("none", 5); testVmessUdp() }
+        "vmess" -> { testVmess("auto", 3); testVmess("chacha20-poly1305", 4); testVmess("none", 5); testVmessUdp(); testVmessLegacy() }
         "ss" -> {
             for (c in listOf("aes-128-gcm", "aes-256-gcm", "chacha20-ietf-poly1305", "xchacha20-ietf-poly1305")) {
                 testSsTcp(c); testSsUdp(c)

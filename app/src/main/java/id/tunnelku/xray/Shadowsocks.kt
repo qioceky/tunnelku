@@ -191,7 +191,7 @@ class SsProto(
         return cipher.open(paySealed)
     }
 
-    override fun openUdp(host: String, port: Int, onReply: (ByteArray) -> Unit): UdpSession {
+    override fun openUdp(host: String, port: Int, onReply: (String, Int, ByteArray) -> Unit): UdpSession {
         val udp = dialer.dialUdpSocket()
         val alive = java.util.concurrent.atomic.AtomicBoolean(true)
         thread(name = "tk-ss-udp", isDaemon = true) {
@@ -206,7 +206,7 @@ class SsProto(
                 try {
                     val data = buf.copyOf(packet.length)
                     val payload = decodeUdpPacket(data) ?: continue
-                    onReply(payload)
+                    onReply(host, port, payload)
                 } catch (e: Exception) {
                     // paket rusak diabaikan
                 }

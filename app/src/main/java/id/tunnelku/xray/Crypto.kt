@@ -4,6 +4,7 @@ import java.security.MessageDigest
 import javax.crypto.Cipher
 import javax.crypto.Mac
 import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 /** Util kripto umum (javax.crypto/MessageDigest) untuk klien Xray Kotlin. */
@@ -52,6 +53,17 @@ object Crypto {
         c.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, nonce))
         if (aad != null) c.updateAAD(aad)
         return c.doFinal(sealed)
+    }
+
+    /** AES-CFB stream (untuk header VMess legacy). */
+    fun aesCfb(key: ByteArray, iv: ByteArray, data: ByteArray, encrypt: Boolean): ByteArray {
+        val c = Cipher.getInstance("AES/CFB/NoPadding")
+        c.init(
+            if (encrypt) Cipher.ENCRYPT_MODE else Cipher.DECRYPT_MODE,
+            SecretKeySpec(key, "AES"),
+            IvParameterSpec(iv),
+        )
+        return c.doFinal(data)
     }
 
     /** Satu blok AES-ECB (untuk AuthID VMess). */

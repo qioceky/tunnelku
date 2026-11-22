@@ -10,15 +10,24 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import id.tunnelku.MainActivity
-import id.tunnelku.R
 import id.tunnelku.model.ProfileStore
 import id.tunnelku.model.SettingsStore
 import id.tunnelku.model.SshProfile
-import id.tunnelku.xray.XraySocksServer
+import id.tunnelku.vpn.stack.OutboundEngine
+import id.tunnelku.vpn.stack.SshEngine
+import id.tunnelku.vpn.stack.TunStack
+import id.tunnelku.vpn.stack.XrayEngine
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import kotlin.concurrent.thread
 
+/**
+ * Layanan VPN TunnelKu — arsitektur remake setia XVEON (v0.6.0):
+ * satu [TunStack] (port forwarder `z7`) untuk kedua mode; engine SSH (JSch)
+ * atau Xray (klien Kotlin) di belakang kontrak [OutboundEngine] (`a8`).
+ * TUN: 10.11.12.2/30, MTU dijepit 1280–1500, DNS profil (bawaan 1.1.1.1),
+ * rute IPv6 blackhole (dibuang stack, anti-bocor).
+ */
 class TunnelVpnService : VpnService() {
 
     companion object {
@@ -31,12 +40,10 @@ class TunnelVpnService : VpnService() {
 
     @Volatile private var running = false
     @Volatile private var manualStop = false
+    @Volatile private var engineLost = false
     private var tunFd: ParcelFileDescriptor? = null
-    private var ssh: SshTunnel? = null
-    private var forwarder: TunForwarder? = null
-    private var xrayServer: XraySocksServer? = null
-    private var udpgwProvider: UdpGwRelayProvider? = null
-    private var socksUdpRelay: SocksUdpRelay? = null
+    private var stack: TunStack? = null
+    private var engine: OutboundEngine? = null
     private var worker: Thread? = null
 
     override fun onCreate() {
@@ -74,6 +81,7 @@ class TunnelVpnService : VpnService() {
         var attempt = 0
         while (!manualStop) {
             attempt++
+            var fatal = false
             try {
                 connectOnce(profile)
                 // connectOnce hanya kembali saat tunnel putus.
@@ -81,9 +89,16 @@ class TunnelVpnService : VpnService() {
                 LogBus.log("Tunnel putus")
             } catch (e: Exception) {
                 LogBus.log("Gagal: ${e.message ?: e.javaClass.simpleName}")
+                // Error kredensial/izin tidak di-retry (ala XVEON).
+                val m = e.message ?: ""
+                if (m.contains("Kredensial ditolak") || m.contains("auth fail", ignoreCase = true) ||
+                    m.contains("sudah tidak didukung")
+                ) {
+                    fatal = true
+                }
             }
             cleanupConnection()
-            if (manualStop) break
+            if (manualStop || fatal) break
             val auto = SettingsStore.getAutoReconnect(this)
             if (!auto || attempt >= 5) {
                 if (attempt >= 5) LogBus.log("Batas 5x percobaan sambung ulang tercapai")
@@ -101,35 +116,23 @@ class TunnelVpnService : VpnService() {
 
     private fun connectOnce(profile: SshProfile) {
         running = true
+        engineLost = false
         LogBus.resetTraffic()
         LogBus.activeProfileName = profile.name
         LogBus.setStatus(TunnelStatus.CONNECTING)
 
-        val transport: StreamTransport
-        val udpProvider: (() -> UdpRelay?)?
-        val aliveCheck: () -> Boolean
-
-        when (profile.mode) {
+        val eng: OutboundEngine = when (profile.mode) {
             SshProfile.MODE_XRAY -> {
                 LogBus.log("Menghubungkan (Xray/${profile.xrayProtocol}): ${profile.name} (${profile.host}:${profile.port})")
-                val server = XraySocksServer(
+                val e = XrayEngine(
                     profile,
                     { s -> protect(s) },
                     { s -> protect(s) },
                 ) { LogBus.log(it) }
-                server.start()
-                xrayServer = server
-                transport = SocksStreamTransport(XraySocksServer.PORT)
-                val relay = SocksUdpRelay(
-                    XraySocksServer.PORT,
-                    { s -> protect(s) },
-                    { srcIp, srcPort, dstIp, dstPort, payload ->
-                        forwarder?.injectUdpReply(srcIp, srcPort, dstIp, dstPort, payload)
-                    },
-                ) { LogBus.log(it) }
-                socksUdpRelay = relay
-                udpProvider = { relay }
-                aliveCheck = { server.alive }
+                // Gerbang verifikasi sesi ala `da`: probe DNS + HTTP harus lolos
+                // sebelum TUN dinyatakan terhubung.
+                e.verify()
+                e
             }
             SshProfile.MODE_SLOWDNS, SshProfile.MODE_UDP_CUSTOM -> {
                 throw IllegalStateException("Mode ${profile.mode} sudah tidak didukung sejak v0.5.0 — TunnelKu fokus SSH & Xray. Buat profil mode SSH atau Xray.")
@@ -137,21 +140,20 @@ class TunnelVpnService : VpnService() {
             else -> { // SSH
                 LogBus.log("Menghubungkan: ${profile.name} (${profile.host}:${profile.port})")
                 val tunnel = SshTunnel(profile, { s -> protect(s) }, { LogBus.log(it) })
-                ssh = tunnel
                 tunnel.connect()
-                transport = SshStreamTransport(tunnel)
-                udpProvider = sshUdpProvider(profile, tunnel)
-                aliveCheck = { tunnel.isConnected }
+                SshEngine(tunnel, profile)
             }
         }
+        engine = eng
 
+        val mtu = profile.mtu.coerceIn(1280, 1500)
         val builder = Builder()
             .setSession("TunnelKu")
-            .setMtu(profile.mtu.coerceIn(576, 9000))
-            .addAddress("10.10.14.2", 32)
+            .setMtu(mtu)
+            .addAddress("10.11.12.2", 30)
             .addRoute("0.0.0.0", 0)
             .addAddress("fd00:14::2", 128)
-            .addRoute("::", 0) // IPv6 ditelan TUN lalu dibuang forwarder (anti-bocor)
+            .addRoute("::", 0) // IPv6 ditelan TUN lalu dibuang stack (anti-bocor)
             .addDnsServer(profile.dns.ifBlank { "1.1.1.1" })
             .setBlocking(false)
         // Kecualikan app sendiri agar socket tunnel tidak berputar.
@@ -160,56 +162,43 @@ class TunnelVpnService : VpnService() {
         val fd = builder.establish()
             ?: throw IllegalStateException("Izin VPN dicabut — Android menolak establish()")
         tunFd = fd
-        LogBus.log("Antarmuka TUN aktif (MTU ${profile.mtu})")
+        LogBus.log("Antarmuka TUN aktif (10.11.12.2/30, MTU $mtu)")
 
-        val fwd = TunForwarder(
+        val st = TunStack(
             FileInputStream(fd.fileDescriptor),
             FileOutputStream(fd.fileDescriptor),
-            transport,
-            profile.dns.ifBlank { "1.1.1.1" },
-            udpProvider,
-        ) { LogBus.log(it) }
-        forwarder = fwd
-        fwd.start()
+            eng,
+            mtu,
+            tcpTimeoutMs = 30000,
+            log = { LogBus.log(it) },
+            onEngineLost = { msg ->
+                LogBus.log("Koneksi engine hilang: $msg")
+                engineLost = true
+            },
+            countUp = { LogBus.addTraffic(0, it.toLong()) },
+            countDown = { LogBus.addTraffic(it.toLong(), 0) },
+        )
+        stack = st
+        st.start()
 
         LogBus.setStatus(TunnelStatus.CONNECTED)
         updateNotification("Terhubung · ${profile.name}")
         LogBus.log("Terhubung: ${profile.name} ✓")
 
         // Tahan thread pekerja selama tunnel hidup.
-        while (!manualStop && aliveCheck()) {
+        while (!manualStop && !engineLost && eng.isConnected()) {
             Thread.sleep(1_000)
         }
         if (!manualStop) throw IllegalStateException("Sesi tunnel berakhir")
     }
 
-    private fun sshUdpProvider(profile: SshProfile, tunnel: SshTunnel): (() -> UdpRelay?)? {
-        if (!profile.udpgwEnabled) return null
-        val provider = UdpGwRelayProvider(
-            tunnel,
-            profile.udpgwHost.ifBlank { "127.0.0.1" },
-            profile.udpgwPort,
-            { srcIp, srcPort, dstIp, dstPort, payload ->
-                forwarder?.injectUdpReply(srcIp, srcPort, dstIp, dstPort, payload)
-            },
-        ) { LogBus.log(it) }
-        udpgwProvider = provider
-        return { provider.get() }
-    }
-
     private fun cleanupConnection() {
-        try { forwarder?.stop() } catch (e: Exception) { /* abaikan */ }
-        forwarder = null
-        try { udpgwProvider?.close() } catch (e: Exception) { /* abaikan */ }
-        udpgwProvider = null
-        try { socksUdpRelay?.close() } catch (e: Exception) { /* abaikan */ }
-        socksUdpRelay = null
+        try { stack?.stop() } catch (e: Exception) { /* abaikan */ }
+        stack = null
         try { tunFd?.close() } catch (e: Exception) { /* abaikan */ }
         tunFd = null
-        try { ssh?.disconnect() } catch (e: Exception) { /* abaikan */ }
-        ssh = null
-        try { xrayServer?.stop() } catch (e: Exception) { /* abaikan */ }
-        xrayServer = null
+        try { engine?.close() } catch (e: Exception) { /* abaikan */ }
+        engine = null
     }
 
     private fun stopTunnel() {
