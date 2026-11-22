@@ -998,7 +998,7 @@ private fun SettingsScreen(
 
         Spacer(Modifier.height(8.dp))
         Text(
-            "TunnelKu v0.4.0 · id.tunnelku\nIkon: Font Awesome Free 6.5.2 (CC BY 4.0).\nAplikasi tunnel versi kita sendiri — clean-room, tanpa server bawaan, tanpa iklan/tracker. Semua server dari profilmu.",
+            "TunnelKu v0.4.1 · id.tunnelku\nIkon: Font Awesome Free 6.5.2 (CC BY 4.0).\nAplikasi tunnel versi kita sendiri — clean-room, tanpa server bawaan, tanpa iklan/tracker. Semua server dari profilmu.",
             color = onGlass.copy(alpha = 0.8f), fontSize = 11.sp,
         )
         Spacer(Modifier.height(16.dp))

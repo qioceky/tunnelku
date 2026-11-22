@@ -83,7 +83,14 @@ var (
 )
 
 func xrayStreamSettings(p *xrayParams) (*internet.StreamConfig, error) {
-	sc := &internet.StreamConfig{ProtocolName: p.Network}
+	protoName := p.Network
+	if protoName == "ws" {
+		protoName = "websocket" // nama protokol terdaftar di Xray
+	}
+	if protoName == "" {
+		protoName = "tcp"
+	}
+	sc := &internet.StreamConfig{ProtocolName: protoName}
 	switch p.Network {
 	case "ws":
 		path := p.WsPath
@@ -114,8 +121,9 @@ func xrayStreamSettings(p *xrayParams) (*internet.StreamConfig, error) {
 		if p.ALPN != "" {
 			t.NextProtocol = strings.Split(p.ALPN, ",")
 		}
-		sc.SecurityType = "tls"
-		sc.SecuritySettings = []*serial.TypedMessage{serial.ToTypedMessage(t)}
+		tm := serial.ToTypedMessage(t)
+		sc.SecurityType = tm.Type
+		sc.SecuritySettings = []*serial.TypedMessage{tm}
 	case "reality":
 		pub, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(p.PublicKey))
 		if err != nil {
@@ -136,14 +144,15 @@ func xrayStreamSettings(p *xrayParams) (*internet.StreamConfig, error) {
 		if fp == "" {
 			fp = "chrome"
 		}
-		sc.SecurityType = "reality"
-		sc.SecuritySettings = []*serial.TypedMessage{serial.ToTypedMessage(&reality.Config{
+		tm := serial.ToTypedMessage(&reality.Config{
 			Fingerprint: fp,
 			ServerName:  p.SNI,
 			PublicKey:   pub,
 			ShortId:     sid,
 			SpiderX:     p.SpiderX,
-		})}
+		})
+		sc.SecurityType = tm.Type
+		sc.SecuritySettings = []*serial.TypedMessage{tm}
 	case "none", "":
 		// tanpa keamanan transport
 	default:
