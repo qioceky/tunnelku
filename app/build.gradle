@@ -69,5 +69,7 @@ dependencies {
     debugImplementation libs.compose.ui.tooling
     // SSH client (fork JSch yang terawat) — mesin mode SSH v0.1.
     implementation 'com.github.mwiede:jsch:0.2.21'
+    // Mesin Go (DNSTT + Hysteria) — AAR dibangun CI dari engine/ via gomobile.
+    implementation(name: 'engine', ext: 'aar')
     testImplementation libs.junit
 }
