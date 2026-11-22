@@ -25,6 +25,7 @@ class SshTunnel(
     private val profile: SshProfile,
     private val protect: (Socket) -> Boolean,
     private val log: (String) -> Unit,
+    private val viaLocalPort: Int = 0,
 ) {
     private var session: Session? = null
     @Volatile var rawSocket: Socket? = null
@@ -34,6 +35,18 @@ class SshTunnel(
 
     /** Bangun socket TCP yang sudah menembus proxy/TLS/payload, siap dibungkus SSH. */
     private fun buildRawSocket(): Socket {
+        if (viaLocalPort > 0) {
+            // Mode SlowDNS: SSH berjalan di atas listener lokal mesin DNSTT.
+            val socket = Socket()
+            socket.soTimeout = 30_000
+            socket.tcpNoDelay = true
+            log("TCP -> 127.0.0.1:$viaLocalPort (via DNSTT) ...")
+            socket.connect(InetSocketAddress("127.0.0.1", viaLocalPort), 20_000)
+            log("Terhubung ke listener DNSTT")
+            socket.soTimeout = 0
+            rawSocket = socket
+            return socket
+        }
         val targetHost: String
         val targetPort: Int
         if (profile.proxyEnabled) {

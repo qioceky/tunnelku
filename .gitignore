@@ -3,3 +3,8 @@ build/
 app/build/
 local.properties
 *.keystore
+engine/dnstt-src/
+engine/hysteria-src/
+app/libs/*.aar
+research/
+verify-v*/

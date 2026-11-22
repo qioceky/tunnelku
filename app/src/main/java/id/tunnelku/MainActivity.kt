@@ -115,6 +115,12 @@ class MainActivity : ComponentActivity() {
 
 // ---------------- util tampilan ----------------
 
+private fun modeLabel(mode: String): String = when (mode) {
+    SshProfile.MODE_SLOWDNS -> "SlowDNS"
+    SshProfile.MODE_UDP_CUSTOM -> "UDP Custom"
+    else -> "SSH"
+}
+
 private fun fmtBytes(n: Long): String = when {
     n >= 1_000_000 -> "%.1f MB".format(n / 1_000_000.0)
     n >= 1_000 -> "%.1f KB".format(n / 1_000.0)
@@ -235,7 +241,7 @@ fun TunnelKuApp(onBgModeChanged: () -> Unit) {
                         .border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape)
                         .padding(horizontal = 8.dp, vertical = 3.dp),
                 ) {
-                    Text("v0.2 · SSH", color = onGlass, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    Text("v0.3", color = onGlass, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -411,7 +417,7 @@ private fun HomeScreen(onGlass: Color, glass: Float, goProfiles: () -> Unit) {
                 Spacer(Modifier.width(10.dp))
                 Column {
                 Text(
-                    active?.let { "SSH · ${it.name}" } ?: "Belum ada profil",
+                    active?.let { "${modeLabel(it.mode)} · ${it.name}" } ?: "Belum ada profil",
                     color = onGlass, fontWeight = FontWeight.Bold, fontSize = 14.sp,
                 )
                 Text(
@@ -420,7 +426,7 @@ private fun HomeScreen(onGlass: Color, glass: Float, goProfiles: () -> Unit) {
                             (if (it.payloadEnabled) " · payload" else "") +
                             (if (it.sniEnabled) " · SNI" else "") +
                             (if (it.proxyEnabled) " · proxy" else "")
-                    } ?: "Ketuk untuk membuat profil SSH pertamamu",
+                    } ?: "Ketuk untuk membuat profil pertamamu",
                     color = onGlass.copy(alpha = 0.85f), fontSize = 12.sp,
                 )
                 }
@@ -432,7 +438,7 @@ private fun HomeScreen(onGlass: Color, glass: Float, goProfiles: () -> Unit) {
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            listOf("SSH" to true, "SlowDNS" to false, "UDP" to false, "OVPN" to false, "Xray" to false).forEach { (label, on) ->
+            listOf("SSH" to true, "SlowDNS" to true, "UDP" to true, "OVPN" to false, "Xray" to false).forEach { (label, on) ->
                 Box(
                     Modifier.clip(RoundedCornerShape(999.dp))
                         .background(if (on) Color.White.copy(alpha = 0.75f) else Color.White.copy(alpha = 0.18f))
@@ -456,7 +462,7 @@ private fun HomeScreen(onGlass: Color, glass: Float, goProfiles: () -> Unit) {
                     ctx.startService(Intent(ctx, TunnelVpnService::class.java).setAction(TunnelVpnService.ACTION_DISCONNECT))
                 } else {
                     if (ProfileStore.active(ctx) == null) {
-                        Toast.makeText(ctx, "Buat profil SSH dulu di tab Profil", Toast.LENGTH_LONG).show()
+                        Toast.makeText(ctx, "Buat profil dulu di tab Profil", Toast.LENGTH_LONG).show()
                         goProfiles()
                         return@Button
                     }
@@ -480,7 +486,7 @@ private fun HomeScreen(onGlass: Color, glass: Float, goProfiles: () -> Unit) {
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            "Mode SSH v0.2: payload kustom, proxy HTTP/SOCKS5, SNI/TLS, private key, UDP penuh via UDPGW.",
+            "Tiga mode: SSH (payload/proxy/SNI/UDPGW), SlowDNS (DNSTT), UDP Custom (Hysteria).",
             color = onGlass.copy(alpha = 0.8f), fontSize = 11.sp,
         )
     }
@@ -503,7 +509,7 @@ private fun ProfilesScreen(
             if (list.isEmpty()) {
                 item {
                     GlassCard(glass, Modifier.fillMaxWidth()) {
-                        Text("Belum ada profil. Tekan tombol di bawah untuk membuat profil SSH.", color = onGlass, fontSize = 13.sp)
+                        Text("Belum ada profil. Tekan tombol di bawah untuk membuat profil pertamamu.", color = onGlass, fontSize = 13.sp)
                     }
                 }
             }
@@ -519,7 +525,7 @@ private fun ProfilesScreen(
                                 Text("AKTIF", color = Color(0xFF2EE66B), fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                             }
                         }
-                        Text("${p.username}@${p.host}:${p.port}", color = onGlass.copy(alpha = 0.85f), fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                        Text("${modeLabel(p.mode)} · ${p.username}@${p.host}:${p.port}", color = onGlass.copy(alpha = 0.85f), fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                         if (p.id != activeId) {
                             Text(
                                 "Jadikan aktif",
@@ -542,7 +548,7 @@ private fun ProfilesScreen(
         ) {
             FaIcon(Fa.PLUS, size = 14.sp, color = Color.White)
             Spacer(Modifier.width(8.dp))
-            Text("Profil SSH Baru", fontWeight = FontWeight.Bold)
+            Text("Profil Baru", fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -557,6 +563,7 @@ private fun ProfileEditor(
     onDelete: (SshProfile) -> Unit,
 ) {
     val base = initial ?: SshProfile()
+    var mode by remember { mutableStateOf(base.mode) }
     var name by remember { mutableStateOf(base.name) }
     var host by remember { mutableStateOf(base.host) }
     var port by remember { mutableStateOf(base.port.toString()) }
@@ -578,14 +585,59 @@ private fun ProfileEditor(
     var udpgwOn by remember { mutableStateOf(base.udpgwEnabled) }
     var udpgwHost by remember { mutableStateOf(base.udpgwHost) }
     var udpgwPort by remember { mutableStateOf(base.udpgwPort.toString()) }
+    var dnsttDomain by remember { mutableStateOf(base.dnsttDomain) }
+    var dnsttPubKey by remember { mutableStateOf(base.dnsttPubKey) }
+    var dnsttResolver by remember { mutableStateOf(base.dnsttResolver) }
+    var hyObfs by remember { mutableStateOf(base.hyObfs) }
+    var hySni by remember { mutableStateOf(base.hySni) }
+    var hyInsecure by remember { mutableStateOf(base.hyInsecure) }
 
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(if (initial == null) "Profil SSH Baru" else "Ubah Profil", color = onGlass, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+        Text(if (initial == null) "Profil Baru" else "Ubah Profil", color = onGlass, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(
+                SshProfile.MODE_SSH to "SSH",
+                SshProfile.MODE_SLOWDNS to "SlowDNS",
+                SshProfile.MODE_UDP_CUSTOM to "UDP Custom",
+            ).forEach { (m, label) ->
+                Box(
+                    Modifier.clip(RoundedCornerShape(999.dp))
+                        .background(if (mode == m) Color.White.copy(alpha = 0.75f) else Color.White.copy(alpha = 0.18f))
+                        .border(1.dp, Color.White.copy(alpha = 0.45f), RoundedCornerShape(999.dp))
+                        .clickable { mode = m }
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                ) {
+                    Text(label, color = if (mode == m) Color(0xFF10233F) else onGlass, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        Text(
+            when (mode) {
+                SshProfile.MODE_SLOWDNS -> "SSH di atas tunnel DNS (DNSTT): server DNSTT meneruskan ke SSH-mu."
+                SshProfile.MODE_UDP_CUSTOM -> "Protokol Hysteria v1 (server udp-custom ePro): akun = user & password Linux server."
+                else -> "SSH langsung / lewat proxy, payload, dan TLS/SNI."
+            },
+            color = onGlass.copy(alpha = 0.85f), fontSize = 11.sp,
+        )
         GlassTextField(name, { name = it }, "Nama profil", onGlass)
-        GlassTextField(host, { host = it }, "Host SSH", onGlass)
-        GlassTextField(port, { port = it }, "Port SSH", onGlass, numeric = true)
+        GlassTextField(host, { host = it }, if (mode == SshProfile.MODE_UDP_CUSTOM) "Host server UDP Custom" else "Host SSH", onGlass)
+        GlassTextField(port, { port = it }, if (mode == SshProfile.MODE_UDP_CUSTOM) "Port UDP" else "Port SSH", onGlass, numeric = true)
         GlassTextField(username, { username = it }, "Username", onGlass)
         GlassTextField(password, { password = it }, "Password", onGlass, password = true)
+        if (mode == SshProfile.MODE_SLOWDNS) {
+            GlassTextField(dnsttDomain, { dnsttDomain = it }, "Domain DNSTT (mis. dns.contoh.com)", onGlass)
+            GlassTextField(dnsttPubKey, { dnsttPubKey = it }, "Kunci publik DNSTT (64 hex)", onGlass, singleLine = false, minLines = 2)
+            GlassTextField(dnsttResolver, { dnsttResolver = it }, "Resolver DNS (host:port)", onGlass)
+        }
+        if (mode == SshProfile.MODE_UDP_CUSTOM) {
+            GlassTextField(hyObfs, { hyObfs = it }, "Obfs password (kosongkan bila tidak ada)", onGlass)
+            GlassTextField(hySni, { hySni = it }, "SNI (kosongkan = ikut host)", onGlass)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Abaikan verifikasi TLS (sertifikat mandiri)", color = onGlass, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Switch(hyInsecure, { hyInsecure = it })
+            }
+        }
+        if (mode == SshProfile.MODE_SSH) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Pakai private key", color = onGlass, fontSize = 13.sp, modifier = Modifier.weight(1f))
             Switch(useKey, { useKey = it })
@@ -626,8 +678,10 @@ private fun ProfileEditor(
         if (sniOn) {
             GlassTextField(sniHost, { sniHost = it }, "Host SNI (bug host)", onGlass)
         }
+        }
         GlassTextField(dns, { dns = it }, "DNS di dalam tunnel", onGlass)
         GlassTextField(mtu, { mtu = it }, "MTU TUN", onGlass, numeric = true)
+        if (mode != SshProfile.MODE_UDP_CUSTOM) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("UDP penuh (UDPGW)", color = onGlass, fontSize = 13.sp)
@@ -638,6 +692,7 @@ private fun ProfileEditor(
         if (udpgwOn) {
             GlassTextField(udpgwHost, { udpgwHost = it }, "Host UDPGW (dari sisi server SSH)", onGlass)
             GlassTextField(udpgwPort, { udpgwPort = it }, "Port UDPGW", onGlass, numeric = true)
+        }
         }
 
         Spacer(Modifier.height(4.dp))
@@ -656,6 +711,10 @@ private fun ProfileEditor(
                         dns = dns.ifBlank { "1.1.1.1" }, mtu = mtu.toIntOrNull() ?: 1400,
                         udpgwEnabled = udpgwOn, udpgwHost = udpgwHost.ifBlank { "127.0.0.1" },
                         udpgwPort = udpgwPort.toIntOrNull() ?: 7300,
+                        mode = mode,
+                        dnsttDomain = dnsttDomain.trim(), dnsttPubKey = dnsttPubKey.trim(),
+                        dnsttResolver = dnsttResolver.ifBlank { "1.1.1.1:53" },
+                        hyObfs = hyObfs, hySni = hySni.trim(), hyInsecure = hyInsecure,
                     ),
                 )
             },
@@ -808,7 +867,7 @@ private fun SettingsScreen(
 
         Spacer(Modifier.height(8.dp))
         Text(
-            "TunnelKu v0.2.0 · id.tunnelku\nIkon: Font Awesome Free 6.5.2 (CC BY 4.0).\nAplikasi tunnel versi kita sendiri — clean-room, tanpa server bawaan, tanpa iklan/tracker. Semua server dari profilmu.",
+            "TunnelKu v0.3.0 · id.tunnelku\nIkon: Font Awesome Free 6.5.2 (CC BY 4.0).\nAplikasi tunnel versi kita sendiri — clean-room, tanpa server bawaan, tanpa iklan/tracker. Semua server dari profilmu.",
             color = onGlass.copy(alpha = 0.8f), fontSize = 11.sp,
         )
         Spacer(Modifier.height(16.dp))

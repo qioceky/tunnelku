@@ -25,6 +25,8 @@ class TunnelVpnService : VpnService() {
         const val ACTION_DISCONNECT = "id.tunnelku.ACTION_DISCONNECT"
         private const val CHANNEL_ID = "tunnelku_tunnel"
         private const val NOTIF_ID = 41
+        private const val SOCKS_PORT = 11080
+        private const val DNSTT_PORT = 11081
         @Volatile var instance: TunnelVpnService? = null
     }
 
@@ -33,6 +35,10 @@ class TunnelVpnService : VpnService() {
     private var tunFd: ParcelFileDescriptor? = null
     private var ssh: SshTunnel? = null
     private var forwarder: TunForwarder? = null
+    @Volatile private var engineDnstt = false
+    @Volatile private var engineHysteria = false
+    private var udpgwProvider: UdpGwRelayProvider? = null
+    private var socksUdpRelay: SocksUdpRelay? = null
     private var worker: Thread? = null
 
     override fun onCreate() {
@@ -53,7 +59,7 @@ class TunnelVpnService : VpnService() {
                 manualStop = false
                 val profile = ProfileStore.active(this)
                 if (profile == null) {
-                    LogBus.log("Tidak ada profil SSH — buat profil dulu di tab Profil")
+                    LogBus.log("Tidak ada profil — buat profil dulu di tab Profil")
                     LogBus.setStatus(TunnelStatus.ERROR)
                     stopSelf()
                     return START_NOT_STICKY
@@ -100,11 +106,62 @@ class TunnelVpnService : VpnService() {
         LogBus.resetTraffic()
         LogBus.activeProfileName = profile.name
         LogBus.setStatus(TunnelStatus.CONNECTING)
-        LogBus.log("Menghubungkan: ${profile.name} (${profile.host}:${profile.port})")
 
-        val tunnel = SshTunnel(profile, { s -> protect(s) }, { LogBus.log(it) })
-        ssh = tunnel
-        tunnel.connect()
+        val transport: StreamTransport
+        val udpProvider: (() -> UdpRelay?)?
+        val aliveCheck: () -> Boolean
+
+        when (profile.mode) {
+            SshProfile.MODE_UDP_CUSTOM -> {
+                LogBus.log("Menghubungkan (UDP Custom): ${profile.name} (${profile.host}:${profile.port})")
+                engine.Engine.startHysteria(
+                    "${profile.host}:${profile.port}",
+                    "${profile.username}:${profile.password}",
+                    profile.hyObfs, profile.hySni, profile.hyInsecure,
+                    "127.0.0.1:$SOCKS_PORT",
+                )
+                engineHysteria = true
+                LogBus.log("Mesin Hysteria (UDP Custom) tersambung, SOCKS5 lokal :$SOCKS_PORT")
+                transport = SocksStreamTransport(SOCKS_PORT)
+                val relay = SocksUdpRelay(
+                    SOCKS_PORT,
+                    { s -> protect(s) },
+                    { srcIp, srcPort, dstIp, dstPort, payload ->
+                        // Balasan UDP: tulis kembali ke TUN lewat forwarder.
+                        forwarder?.injectUdpReply(srcIp, srcPort, dstIp, dstPort, payload)
+                    },
+                ) { LogBus.log(it) }
+                socksUdpRelay = relay
+                udpProvider = { relay }
+                aliveCheck = { engineHysteria }
+            }
+            SshProfile.MODE_SLOWDNS -> {
+                LogBus.log("Menghubungkan (SlowDNS): ${profile.name} — resolver ${profile.dnsttResolver}, domain ${profile.dnsttDomain}")
+                engine.Engine.startDNSTT(
+                    profile.dnsttResolver.ifBlank { "1.1.1.1:53" },
+                    profile.dnsttDomain,
+                    profile.dnsttPubKey,
+                    "127.0.0.1:$DNSTT_PORT",
+                )
+                engineDnstt = true
+                LogBus.log("Mesin DNSTT aktif, listener lokal :$DNSTT_PORT — membuka SSH di atasnya")
+                val tunnel = SshTunnel(profile, { s -> protect(s) }, { LogBus.log(it) }, viaLocalPort = DNSTT_PORT)
+                ssh = tunnel
+                tunnel.connect()
+                transport = SshStreamTransport(tunnel)
+                udpProvider = sshUdpProvider(profile, tunnel)
+                aliveCheck = { tunnel.isConnected }
+            }
+            else -> { // SSH
+                LogBus.log("Menghubungkan: ${profile.name} (${profile.host}:${profile.port})")
+                val tunnel = SshTunnel(profile, { s -> protect(s) }, { LogBus.log(it) })
+                ssh = tunnel
+                tunnel.connect()
+                transport = SshStreamTransport(tunnel)
+                udpProvider = sshUdpProvider(profile, tunnel)
+                aliveCheck = { tunnel.isConnected }
+            }
+        }
 
         val builder = Builder()
             .setSession("TunnelKu")
@@ -115,7 +172,7 @@ class TunnelVpnService : VpnService() {
             .addRoute("::", 0) // IPv6 ditelan TUN lalu dibuang forwarder (anti-bocor)
             .addDnsServer(profile.dns.ifBlank { "1.1.1.1" })
             .setBlocking(false)
-        // Kecualikan app sendiri agar socket SSH tidak berputar.
+        // Kecualikan app sendiri agar socket tunnel tidak berputar.
         try { builder.addDisallowedApplication(packageName) } catch (e: Exception) { /* abaikan */ }
 
         val fd = builder.establish()
@@ -126,10 +183,9 @@ class TunnelVpnService : VpnService() {
         val fwd = TunForwarder(
             FileInputStream(fd.fileDescriptor),
             FileOutputStream(fd.fileDescriptor),
-            tunnel,
+            transport,
             profile.dns.ifBlank { "1.1.1.1" },
-            if (profile.udpgwEnabled) profile.udpgwHost.ifBlank { "127.0.0.1" } else null,
-            profile.udpgwPort,
+            udpProvider,
         ) { LogBus.log(it) }
         forwarder = fwd
         fwd.start()
@@ -138,20 +194,46 @@ class TunnelVpnService : VpnService() {
         updateNotification("Terhubung · ${profile.name}")
         LogBus.log("Terhubung: ${profile.name} ✓")
 
-        // Tahan thread pekerja selama SSH hidup.
-        while (!manualStop && tunnel.isConnected) {
+        // Tahan thread pekerja selama tunnel hidup.
+        while (!manualStop && aliveCheck()) {
             Thread.sleep(1_000)
         }
-        if (!manualStop) throw IllegalStateException("Sesi SSH berakhir")
+        if (!manualStop) throw IllegalStateException("Sesi tunnel berakhir")
+    }
+
+    private fun sshUdpProvider(profile: SshProfile, tunnel: SshTunnel): (() -> UdpRelay?)? {
+        if (!profile.udpgwEnabled) return null
+        val provider = UdpGwRelayProvider(
+            tunnel,
+            profile.udpgwHost.ifBlank { "127.0.0.1" },
+            profile.udpgwPort,
+            { srcIp, srcPort, dstIp, dstPort, payload ->
+                forwarder?.injectUdpReply(srcIp, srcPort, dstIp, dstPort, payload)
+            },
+        ) { LogBus.log(it) }
+        udpgwProvider = provider
+        return { provider.get() }
     }
 
     private fun cleanupConnection() {
         try { forwarder?.stop() } catch (e: Exception) { /* abaikan */ }
         forwarder = null
+        try { udpgwProvider?.close() } catch (e: Exception) { /* abaikan */ }
+        udpgwProvider = null
+        try { socksUdpRelay?.close() } catch (e: Exception) { /* abaikan */ }
+        socksUdpRelay = null
         try { tunFd?.close() } catch (e: Exception) { /* abaikan */ }
         tunFd = null
         try { ssh?.disconnect() } catch (e: Exception) { /* abaikan */ }
         ssh = null
+        if (engineDnstt) {
+            try { engine.Engine.stopDNSTT() } catch (e: Exception) { /* abaikan */ }
+            engineDnstt = false
+        }
+        if (engineHysteria) {
+            try { engine.Engine.stopHysteria() } catch (e: Exception) { /* abaikan */ }
+            engineHysteria = false
+        }
     }
 
     private fun stopTunnel() {

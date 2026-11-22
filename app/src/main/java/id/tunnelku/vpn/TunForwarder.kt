@@ -1,6 +1,5 @@
 package id.tunnelku.vpn
 
-import com.jcraft.jsch.ChannelDirectTCPIP
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.ConcurrentHashMap
@@ -9,20 +8,19 @@ import kotlin.concurrent.thread
 import kotlin.random.Random
 
 /**
- * Mesin TUN -> SSH TunnelKu v0.1 (Java/Kotlin murni, tanpa native):
- * tumpukan TCP userspace sederhana di atas channel direct-tcpip JSch.
+ * Mesin TUN TunnelKu (Kotlin murni): tumpukan TCP userspace sederhana di
+ * atas [StreamTransport] aktif (channel SSH / SOCKS5 Hysteria).
  * - TCP: state machine ringkas (SYN/DATA/FIN/RST), go-back-N untuk segmen tak urut.
- * - UDP: penuh via BadVPN UDPGW di dalam SSH (v0.2); bila UDPGW mati/tidak
- *   tersedia, DNS (port 53) jatuh ke DNS-over-TCP dan UDP lain dibuang.
+ * - UDP: penuh via [UdpRelay] aktif (UDPGW di SSH / UDP ASSOCIATE di SOCKS5);
+ *   bila relay tidak tersedia, DNS (port 53) jatuh ke DNS-over-TCP dan UDP lain dibuang.
  * - IPv6: dibuang (route ::/0 diarahkan ke TUN agar tidak bocor keluar VPN).
  */
 class TunForwarder(
     private val tunIn: InputStream,
     private val tunOut: OutputStream,
-    private val ssh: SshTunnel,
+    private val transport: StreamTransport,
     private val dnsServer: String,
-    private val udpgwHost: String?,
-    private val udpgwPort: Int,
+    private val udpProvider: (() -> UdpRelay?)?,
     private val log: (String) -> Unit,
 ) {
     @Volatile private var running = false
@@ -39,7 +37,7 @@ class TunForwarder(
     ) {
         var clientNextSeq: Long = 0
         var serverSeq: Long = Random.nextInt(1, Int.MAX_VALUE).toLong()
-        var channel: ChannelDirectTCPIP? = null
+        var stream: DuplexStream? = null
         var out: OutputStream? = null
         @Volatile var closed = false
         @Volatile var clientFin = false
@@ -67,46 +65,11 @@ class TunForwarder(
             }
         }
         thread(name = "tk-tun-reader", isDaemon = true) { readLoop() }
-        log("Mesin TUN aktif (DNS via $dnsServer" + (if (udpgwHost != null) ", UDP via UDPGW $udpgwHost:$udpgwPort" else "") + ")")
-    }
-
-    @Volatile private var udpgw: UdpGwClient? = null
-    @Volatile private var udpgwNextTry = 0L
-
-    /** Ambil klien UDPGW yang hidup; sambungkan malas (lazy) bila perlu. Null = tidak tersedia. */
-    private fun udpGw(): UdpGwClient? {
-        val host = udpgwHost ?: return null
-        udpgw?.let { if (it.alive) return it }
-        val now = System.currentTimeMillis()
-        if (now < udpgwNextTry) return null
-        udpgwNextTry = now + 30_000
-        return try {
-            val channel = ssh.openStream(host, udpgwPort)
-            val client = UdpGwClient(
-                channel.outputStream, channel.inputStream,
-                onPacket = { srcIp, srcPort, dstIp, dstPort, payload ->
-                    sendUdpPacket(srcIp, srcPort, dstIp, dstPort, payload)
-                    LogBus.addTraffic(payload.size.toLong(), 0)
-                },
-                onDead = { reason ->
-                    log("UDPGW putus: $reason — UDP jatuh ke mode DNS-saja")
-                    udpgw = null
-                },
-                log = log,
-            )
-            client.start()
-            udpgw = client
-            client
-        } catch (e: Exception) {
-            log("UDPGW tidak tersedia ($host:$udpgwPort): ${e.message} — UDP mode DNS-saja")
-            null
-        }
+        log("Mesin TUN aktif (DNS via $dnsServer)")
     }
 
     fun stop() {
         running = false
-        try { udpgw?.close() } catch (e: Exception) { /* abaikan */ }
-        udpgw = null
         flows.values.forEach { closeFlow(it, sendRst = false) }
         flows.clear()
         writeQueue.offer(ByteArray(0))
@@ -225,9 +188,9 @@ class TunForwarder(
     private fun openChannelForFlow(flow: TcpFlow) {
         thread(name = "tk-flow-${flow.dstPort}", isDaemon = true) {
             try {
-                val channel = ssh.openStream(ipToString(flow.dstIp), flow.dstPort)
-                flow.channel = channel
-                val out = channel.outputStream
+                val stream = transport.openStream(ipToString(flow.dstIp), flow.dstPort)
+                flow.stream = stream
+                val out = stream.output
                 flow.out = out
                 // Tulis antrean data klien yang sudah di-ACK.
                 thread(name = "tk-flow-w", isDaemon = true) {
@@ -241,7 +204,7 @@ class TunForwarder(
                     } catch (e: Exception) { /* aliran selesai */ }
                 }
                 // Baca balasan server -> paket TUN.
-                val inp = channel.inputStream
+                val inp = stream.input
                 val rbuf = ByteArray(8192)
                 while (!flow.closed) {
                     val n = inp.read(rbuf)
@@ -292,7 +255,7 @@ class TunForwarder(
 
     private fun closeFlow(flow: TcpFlow, sendRst: Boolean) {
         flow.closed = true
-        try { flow.channel?.disconnect() } catch (e: Exception) { /* abaikan */ }
+        try { flow.stream?.close() } catch (e: Exception) { /* abaikan */ }
     }
 
     private fun sendTcpPacket(
@@ -344,8 +307,8 @@ class TunForwarder(
         val payloadOff = ihl + 8
         val payloadLen = (minOf(totalLen, ihl + udpLen) - payloadOff).coerceAtLeast(0)
         val payload = pkt.copyOfRange(payloadOff, payloadOff + payloadLen)
-        val gw = udpGw()
-        if (gw != null) {
+        val gw = udpProvider?.invoke()
+        if (gw != null && gw.alive) {
             gw.send(srcIp, srcPort, dstIp, dstPort, payload, isDns = dstPort == 53)
             LogBus.addTraffic(0, payloadLen.toLong())
             return
@@ -353,7 +316,7 @@ class TunForwarder(
         if (dstPort != 53) {
             if (!udpDropLogged) {
                 udpDropLogged = true
-                log("UDP non-DNS dibuang — UDPGW tidak tersedia di server SSH ini")
+                log("UDP non-DNS dibuang — relay UDP tidak tersedia untuk mode ini")
             }
             return
         }
@@ -361,9 +324,9 @@ class TunForwarder(
         LogBus.addTraffic(0, payloadLen.toLong())
         thread(name = "tk-dns", isDaemon = true) {
             try {
-                val channel = ssh.openStream(dnsServer, 53)
-                val out = channel.outputStream
-                val inp = channel.inputStream
+                val stream = transport.openStream(dnsServer, 53)
+                val out = stream.output
+                val inp = stream.input
                 val framed = ByteArray(2 + query.size)
                 framed[0] = (query.size shr 8).toByte()
                 framed[1] = (query.size and 0xFF).toByte()
@@ -374,13 +337,19 @@ class TunForwarder(
                 val rlen = u16(lenBuf, 0)
                 val resp = ByteArray(rlen)
                 readFully(inp, resp)
-                channel.disconnect()
+                stream.close()
                 sendUdpPacket(dstIp, 53, srcIp, srcPort, resp)
                 LogBus.addTraffic(rlen.toLong(), 0)
             } catch (e: Exception) {
                 // DNS gagal: diam, klien akan mencoba lagi / fallback.
             }
         }
+    }
+
+    /** Dipakai relay UDP (UDPGW/SOCKS5) untuk menyuntikkan balasan ke TUN. */
+    fun injectUdpReply(srcIp: Int, srcPort: Int, dstIp: Int, dstPort: Int, payload: ByteArray) {
+        sendUdpPacket(srcIp, srcPort, dstIp, dstPort, payload)
+        LogBus.addTraffic(payload.size.toLong(), 0)
     }
 
     private fun sendUdpPacket(srcIp: Int, srcPort: Int, dstIp: Int, dstPort: Int, payload: ByteArray) {

@@ -29,6 +29,13 @@ data class SshProfile(
     val udpgwEnabled: Boolean = true,
     val udpgwHost: String = "127.0.0.1",
     val udpgwPort: Int = 7300,
+    val mode: String = MODE_SSH, // SSH | SLOWDNS | UDP_CUSTOM
+    val dnsttDomain: String = "",
+    val dnsttPubKey: String = "",
+    val dnsttResolver: String = "1.1.1.1:53",
+    val hyObfs: String = "",
+    val hySni: String = "",
+    val hyInsecure: Boolean = true,
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("name", name); put("host", host); put("port", port)
@@ -41,9 +48,16 @@ data class SshProfile(
         put("sniEnabled", sniEnabled); put("sniHost", sniHost)
         put("dns", dns); put("mtu", mtu)
         put("udpgwEnabled", udpgwEnabled); put("udpgwHost", udpgwHost); put("udpgwPort", udpgwPort)
+        put("mode", mode)
+        put("dnsttDomain", dnsttDomain); put("dnsttPubKey", dnsttPubKey); put("dnsttResolver", dnsttResolver)
+        put("hyObfs", hyObfs); put("hySni", hySni); put("hyInsecure", hyInsecure)
     }
 
     companion object {
+        const val MODE_SSH = "SSH"
+        const val MODE_SLOWDNS = "SLOWDNS"
+        const val MODE_UDP_CUSTOM = "UDP_CUSTOM"
+
         fun fromJson(o: JSONObject): SshProfile = SshProfile(
             id = o.optString("id", UUID.randomUUID().toString()),
             name = o.optString("name", "Profil SSH"),
@@ -67,6 +81,13 @@ data class SshProfile(
             udpgwEnabled = o.optBoolean("udpgwEnabled", true),
             udpgwHost = o.optString("udpgwHost", "127.0.0.1"),
             udpgwPort = o.optInt("udpgwPort", 7300),
+            mode = o.optString("mode", MODE_SSH),
+            dnsttDomain = o.optString("dnsttDomain", ""),
+            dnsttPubKey = o.optString("dnsttPubKey", ""),
+            dnsttResolver = o.optString("dnsttResolver", "1.1.1.1:53"),
+            hyObfs = o.optString("hyObfs", ""),
+            hySni = o.optString("hySni", ""),
+            hyInsecure = o.optBoolean("hyInsecure", true),
         )
     }
 }

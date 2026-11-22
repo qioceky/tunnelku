@@ -53,6 +53,32 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "Keystore tetap dipulihkan ($(stat -c%s "$HOME/.android/tunnelku.keystore") byte)."
 
+      - name: Setup Go 1.20 (mesin DNSTT + Hysteria)
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.20.14'
+
+      - name: Ambil sumber resmi dnstt & hysteria + bangun engine.aar (gomobile)
+        run: |
+          set -euo pipefail
+          cd engine
+          git clone --quiet https://www.bamsoftware.com/git/dnstt.git dnstt-src
+          rm -rf dnstt-src/.git
+          sed -i 's/^go 1.21$/go 1.20/' dnstt-src/go.mod
+          sed -i 's#github.com/xtaci/kcp-go/v5 v5.6.8#github.com/xtaci/kcp-go/v5 v5.6.1#; s#github.com/xtaci/smux v1.5.24#github.com/xtaci/smux v1.5.19#' dnstt-src/go.mod
+          git clone --quiet --depth 1 --branch v1.3.5 https://github.com/apernet/hysteria.git hysteria-src
+          rm -rf hysteria-src/.git
+          export GOPATH="$HOME/go"
+          go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20230531173138-7d161ad47618
+          export PATH="$GOPATH/bin:$PATH"
+          export ANDROID_NDK_HOME=$(ls -d "$ANDROID_HOME"/ndk/* | sort -V | tail -1)
+          echo "NDK: $ANDROID_NDK_HOME"
+          GOFLAGS=-mod=mod go mod tidy
+          gomobile init
+          mkdir -p ../app/libs
+          gomobile bind -target=android/arm64,android/arm -androidapi 26 -o ../app/libs/engine.aar .
+          ls -lh ../app/libs/engine.aar
+
       - name: Build release APK
         run: ./gradlew :app:assembleRelease --stacktrace
 
