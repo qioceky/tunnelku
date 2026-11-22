@@ -239,6 +239,7 @@ open class XrayDialer(
 
     /** Socket UDP langsung ke server (untuk UDP Shadowsocks). */
     open fun dialUdpSocket(): DatagramSocket {
+        require(profile.host.isNotBlank()) { "Host server kosong" }
         val s = DatagramSocket()
         protectDatagram(s)
         s.connect(InetSocketAddress(profile.host, profile.port))
@@ -246,6 +247,8 @@ open class XrayDialer(
     }
 
     private fun connectPlain(host: String, port: Int, timeoutMs: Int): Socket {
+        // Host kosong akan ter-resolve ke loopback oleh Java — gagalkan terus terang.
+        require(host.isNotBlank()) { "Host server kosong" }
         val addresses = InetAddress.getAllByName(host).toList().take(6)
         require(addresses.isNotEmpty()) { "DNS gagal untuk $host" }
         var lastErr: Exception? = null

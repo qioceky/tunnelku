@@ -38,6 +38,9 @@ class XrayEngine(
         private set
     @Volatile private var vmessLegacy = false
 
+    /** Penyebab asli kegagalan exchangeDns terakhir (dial ditolak dsb.) — untuk pesan probe. */
+    @Volatile private var lastDnsError: String? = null
+
     private fun newProto(): XrayProto = when (profile.xrayProtocol) {
         "vless" -> VlessProto(profile, dialer)
         "vmess" -> VmessProto(profile, dialer, legacy = vmessLegacy)
@@ -89,6 +92,7 @@ class XrayEngine(
 
     /** XrayDNS ala `da.O()`: satu pertukaran DNS mentah di dalam UDP protokol. */
     override fun exchangeDns(host: String, payload: ByteArray): ByteArray? {
+        lastDnsError = null
         var handle: UdpHandle? = null
         return try {
             val latch = CountDownLatch(1)
@@ -103,6 +107,8 @@ class XrayEngine(
             handle.flush()
             if (latch.await(2500, TimeUnit.MILLISECONDS)) result.get() else null
         } catch (e: Exception) {
+            // Jangan telan penyebabnya: dial yang gagal seketika BUKAN timeout.
+            lastDnsError = e.message ?: e.javaClass.simpleName
             null
         } finally {
             try { handle?.close() } catch (e: Exception) { /* abaikan */ }
@@ -196,7 +202,10 @@ class XrayEngine(
     private fun probeDns(server: String) {
         val id = Random.nextInt(65536)
         val resp = exchangeDns(server, buildDnsQuery(id, "one.one.one.one"))
-            ?: throw IOException("DNS ke $server tidak dijawab dalam 2500 ms")
+            ?: throw IOException(
+                "DNS ke $server tidak dijawab dalam 2500 ms" +
+                    (lastDnsError?.let { " — penyebab: $it" } ?: ""),
+            )
         if (resp.size < 12 || resp.size > 4096) {
             throw IOException("DNS ke $server: ukuran respons janggal (${resp.size} byte)")
         }

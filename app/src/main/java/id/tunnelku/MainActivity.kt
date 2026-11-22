@@ -242,7 +242,7 @@ fun TunnelKuApp(onBgModeChanged: () -> Unit) {
                         .border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape)
                         .padding(horizontal = 8.dp, vertical = 3.dp),
                 ) {
-                    Text("v0.6", color = onGlass, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    Text("v0.6.1", color = onGlass, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -983,7 +983,7 @@ private fun SettingsScreen(
 
         Spacer(Modifier.height(8.dp))
         Text(
-            "TunnelKu v0.6.0 · id.tunnelku\nIkon: Font Awesome Free 6.5.2 (CC BY 4.0).\nAplikasi tunnel versi kita sendiri — clean-room, tanpa server bawaan, tanpa iklan/tracker. Semua server dari profilmu.",
+            "TunnelKu v0.6.1 · id.tunnelku\nIkon: Font Awesome Free 6.5.2 (CC BY 4.0).\nAplikasi tunnel versi kita sendiri — clean-room, tanpa server bawaan, tanpa iklan/tracker. Semua server dari profilmu.",
             color = onGlass.copy(alpha = 0.8f), fontSize = 11.sp,
         )
         Spacer(Modifier.height(16.dp))

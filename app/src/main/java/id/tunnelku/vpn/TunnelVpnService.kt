@@ -89,10 +89,10 @@ class TunnelVpnService : VpnService() {
                 LogBus.log("Tunnel putus")
             } catch (e: Exception) {
                 LogBus.log("Gagal: ${e.message ?: e.javaClass.simpleName}")
-                // Error kredensial/izin tidak di-retry (ala XVEON).
+                // Error kredensial/izin/profil tidak di-retry (ala XVEON).
                 val m = e.message ?: ""
                 if (m.contains("Kredensial ditolak") || m.contains("auth fail", ignoreCase = true) ||
-                    m.contains("sudah tidak didukung")
+                    m.contains("sudah tidak didukung") || m.contains("belum lengkap")
                 ) {
                     fatal = true
                 }
@@ -114,12 +114,39 @@ class TunnelVpnService : VpnService() {
         stopSelf()
     }
 
+    /** Profil setengah kosong tidak usah dicoba — gagal jelas sekali, tanpa retry. */
+    private fun validateProfile(profile: SshProfile) {
+        if (profile.host.isBlank()) {
+            throw IllegalStateException(
+                "Profil belum lengkap: Host server masih kosong — buka tab Profil, edit profil ini, " +
+                    "isi Host server, atau tempel link akun lalu tekan Impor dari Link, kemudian Simpan",
+            )
+        }
+        if (profile.mode == SshProfile.MODE_XRAY) {
+            when (profile.xrayProtocol) {
+                "vless", "vmess" -> if (profile.xrayUuid.isBlank()) {
+                    throw IllegalStateException(
+                        "Profil belum lengkap: UUID ${profile.xrayProtocol} masih kosong — " +
+                            "isi manual di editor profil atau pakai Impor dari Link",
+                    )
+                }
+                "trojan", "ss" -> if (profile.xrayPassword.isBlank()) {
+                    throw IllegalStateException(
+                        "Profil belum lengkap: Password ${profile.xrayProtocol} masih kosong — " +
+                            "isi manual di editor profil atau pakai Impor dari Link",
+                    )
+                }
+            }
+        }
+    }
+
     private fun connectOnce(profile: SshProfile) {
         running = true
         engineLost = false
         LogBus.resetTraffic()
         LogBus.activeProfileName = profile.name
         LogBus.setStatus(TunnelStatus.CONNECTING)
+        validateProfile(profile)
 
         val eng: OutboundEngine = when (profile.mode) {
             SshProfile.MODE_XRAY -> {
