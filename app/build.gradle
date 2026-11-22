@@ -12,8 +12,8 @@ android {
         applicationId "id.tunnelku"
         minSdk 26
         targetSdk 35
-        versionCode 6
-        versionName "0.4.1"
+        versionCode 7
+        versionName "0.5.0"
     }
 
     buildFeatures {
@@ -69,7 +69,5 @@ dependencies {
     debugImplementation libs.compose.ui.tooling
     // SSH client (fork JSch yang terawat) — mesin mode SSH v0.1.
     implementation 'com.github.mwiede:jsch:0.2.21'
-    // Mesin Go (DNSTT + Hysteria) — AAR dibangun CI dari engine/ via gomobile.
-    implementation(name: 'engine', ext: 'aar')
     testImplementation libs.junit
 }

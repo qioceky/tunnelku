@@ -242,7 +242,7 @@ fun TunnelKuApp(onBgModeChanged: () -> Unit) {
                         .border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape)
                         .padding(horizontal = 8.dp, vertical = 3.dp),
                 ) {
-                    Text("v0.4", color = onGlass, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    Text("v0.5", color = onGlass, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -439,7 +439,7 @@ private fun HomeScreen(onGlass: Color, glass: Float, goProfiles: () -> Unit) {
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            listOf("SSH" to true, "SlowDNS" to true, "UDP" to true, "Xray" to true, "OVPN" to false).forEach { (label, on) ->
+            listOf("SSH" to true, "Xray" to true, "OVPN" to false).forEach { (label, on) ->
                 Box(
                     Modifier.clip(RoundedCornerShape(999.dp))
                         .background(if (on) Color.White.copy(alpha = 0.75f) else Color.White.copy(alpha = 0.18f))
@@ -487,7 +487,7 @@ private fun HomeScreen(onGlass: Color, glass: Float, goProfiles: () -> Unit) {
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            "Empat mode: SSH (payload/proxy/SNI/UDPGW), SlowDNS (DNSTT), UDP Custom (Hysteria), Xray (VLESS/VMess/Trojan/SS).",
+            "Dua mode: SSH (payload/proxy/SNI/UDPGW) dan Xray (VLESS/VMess/Trojan/SS — klien Kotlin bawaan).",
             color = onGlass.copy(alpha = 0.8f), fontSize = 11.sp,
         )
     }
@@ -591,12 +591,6 @@ private fun ProfileEditor(
     var udpgwOn by remember { mutableStateOf(base.udpgwEnabled) }
     var udpgwHost by remember { mutableStateOf(base.udpgwHost) }
     var udpgwPort by remember { mutableStateOf(base.udpgwPort.toString()) }
-    var dnsttDomain by remember { mutableStateOf(base.dnsttDomain) }
-    var dnsttPubKey by remember { mutableStateOf(base.dnsttPubKey) }
-    var dnsttResolver by remember { mutableStateOf(base.dnsttResolver) }
-    var hyObfs by remember { mutableStateOf(base.hyObfs) }
-    var hySni by remember { mutableStateOf(base.hySni) }
-    var hyInsecure by remember { mutableStateOf(base.hyInsecure) }
     var importLink by remember { mutableStateOf("") }
     var xrProto by remember { mutableStateOf(base.xrayProtocol) }
     var xrUuid by remember { mutableStateOf(base.xrayUuid) }
@@ -616,14 +610,13 @@ private fun ProfileEditor(
     var xrGrpcService by remember { mutableStateOf(base.xrayGrpcService) }
     var xrAlterId by remember { mutableStateOf(base.xrayAlterId.toString()) }
     var xrVmessSecurity by remember { mutableStateOf(base.xrayVmessSecurity) }
+    var xrInsecure by remember { mutableStateOf(base.xrayInsecure) }
 
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(if (initial == null) "Profil Baru" else "Ubah Profil", color = onGlass, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf(
                 SshProfile.MODE_SSH to "SSH",
-                SshProfile.MODE_SLOWDNS to "SlowDNS",
-                SshProfile.MODE_UDP_CUSTOM to "UDP Custom",
                 SshProfile.MODE_XRAY to "Xray",
             ).forEach { (m, label) ->
                 Box(
@@ -639,16 +632,14 @@ private fun ProfileEditor(
         }
         Text(
             when (mode) {
-                SshProfile.MODE_SLOWDNS -> "SSH di atas tunnel DNS (DNSTT): server DNSTT meneruskan ke SSH-mu."
-                SshProfile.MODE_UDP_CUSTOM -> "Protokol Hysteria v1 (server udp-custom ePro): akun = user & password Linux server."
-                SshProfile.MODE_XRAY -> "Core Xray resmi: VLESS / VMess / Trojan / Shadowsocks. Tempel link berbagi untuk mengisi otomatis."
+                SshProfile.MODE_XRAY -> "Klien Xray Kotlin bawaan: VLESS / VMess / Trojan / Shadowsocks (TCP/WS + TLS). Tempel link berbagi untuk mengisi otomatis."
                 else -> "SSH langsung / lewat proxy, payload, dan TLS/SNI."
             },
             color = onGlass.copy(alpha = 0.85f), fontSize = 11.sp,
         )
         GlassTextField(name, { name = it }, "Nama profil", onGlass)
-        GlassTextField(host, { host = it }, if (mode == SshProfile.MODE_UDP_CUSTOM) "Host server UDP Custom" else if (mode == SshProfile.MODE_XRAY) "Host server" else "Host SSH", onGlass)
-        GlassTextField(port, { port = it }, if (mode == SshProfile.MODE_UDP_CUSTOM) "Port UDP" else "Port", onGlass, numeric = true)
+        GlassTextField(host, { host = it }, if (mode == SshProfile.MODE_XRAY) "Host server" else "Host SSH", onGlass)
+        GlassTextField(port, { port = it }, "Port", onGlass, numeric = true)
         if (mode != SshProfile.MODE_XRAY) {
             GlassTextField(username, { username = it }, "Username", onGlass)
             GlassTextField(password, { password = it }, "Password", onGlass, password = true)
@@ -670,7 +661,7 @@ private fun ProfileEditor(
                             xrPubKey = parsed.xrayPublicKey; xrShortId = parsed.xrayShortId; xrSpiderX = parsed.xraySpiderX
                             xrNetwork = parsed.xrayNetwork; xrWsPath = parsed.xrayWsPath; xrWsHost = parsed.xrayWsHost
                             xrGrpcService = parsed.xrayGrpcService; xrAlterId = parsed.xrayAlterId.toString()
-                            xrVmessSecurity = parsed.xrayVmessSecurity
+                            xrVmessSecurity = parsed.xrayVmessSecurity; xrInsecure = parsed.xrayInsecure
                             Toast.makeText(ctx, "Link terimpor — periksa lalu Simpan", Toast.LENGTH_SHORT).show()
                         }
                     }
@@ -691,7 +682,7 @@ private fun ProfileEditor(
                 GlassTextField(xrUuid, { xrUuid = it }, "UUID", onGlass)
             }
             if (xrProto == "vless") {
-                GlassTextField(xrFlow, { xrFlow = it }, "Flow (kosong / xtls-rprx-vision)", onGlass)
+                GlassTextField(xrFlow, { xrFlow = it }, "Flow (kosongkan — vision belum didukung)", onGlass)
             }
             if (xrProto == "vmess") {
                 GlassTextField(xrAlterId, { xrAlterId = it }, "AlterID (Xray hanya 0)", onGlass, numeric = true)
@@ -704,7 +695,7 @@ private fun ProfileEditor(
                 GlassTextField(xrFlow, { xrFlow = it }, "Flow (opsional)", onGlass)
             }
             if (xrProto == "ss") {
-                GlassTextField(xrMethod, { xrMethod = it }, "Method (aes-256-gcm / chacha20-poly1305 / 2022-...)", onGlass)
+                GlassTextField(xrMethod, { xrMethod = it }, "Method (aes-128-gcm / aes-256-gcm / chacha20-ietf-poly1305 / xchacha20-ietf-poly1305)", onGlass)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("tcp" to "TCP", "ws" to "WS", "grpc" to "gRPC").forEach { (m, label) ->
@@ -741,24 +732,18 @@ private fun ProfileEditor(
             }
             if (xrSecurity == "tls") {
                 GlassTextField(xrAlpn, { xrAlpn = it }, "ALPN (mis. h2,http/1.1 — opsional)", onGlass)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Lewati verifikasi TLS", color = onGlass, fontSize = 13.sp)
+                        Text("allowInsecure — untuk sertifikat mandiri / SNI tak cocok", color = onGlass.copy(alpha = 0.8f), fontSize = 11.sp)
+                    }
+                    Switch(xrInsecure, { xrInsecure = it })
+                }
             }
             if (xrSecurity == "reality") {
                 GlassTextField(xrPubKey, { xrPubKey = it }, "Public key REALITY (pbk)", onGlass)
                 GlassTextField(xrShortId, { xrShortId = it }, "Short ID (sid, hex)", onGlass)
                 GlassTextField(xrSpiderX, { xrSpiderX = it }, "SpiderX (spx, opsional)", onGlass)
-            }
-        }
-        if (mode == SshProfile.MODE_SLOWDNS) {
-            GlassTextField(dnsttDomain, { dnsttDomain = it }, "Domain DNSTT (mis. dns.contoh.com)", onGlass)
-            GlassTextField(dnsttPubKey, { dnsttPubKey = it }, "Kunci publik DNSTT (64 hex)", onGlass, singleLine = false, minLines = 2)
-            GlassTextField(dnsttResolver, { dnsttResolver = it }, "Resolver DNS (host:port)", onGlass)
-        }
-        if (mode == SshProfile.MODE_UDP_CUSTOM) {
-            GlassTextField(hyObfs, { hyObfs = it }, "Obfs password (kosongkan bila tidak ada)", onGlass)
-            GlassTextField(hySni, { hySni = it }, "SNI (kosongkan = ikut host)", onGlass)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Abaikan verifikasi TLS (sertifikat mandiri)", color = onGlass, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                Switch(hyInsecure, { hyInsecure = it })
             }
         }
         if (mode == SshProfile.MODE_SSH) {
@@ -805,7 +790,7 @@ private fun ProfileEditor(
         }
         GlassTextField(dns, { dns = it }, "DNS di dalam tunnel", onGlass)
         GlassTextField(mtu, { mtu = it }, "MTU TUN", onGlass, numeric = true)
-        if (mode != SshProfile.MODE_UDP_CUSTOM && mode != SshProfile.MODE_XRAY) {
+        if (mode == SshProfile.MODE_SSH) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("UDP penuh (UDPGW)", color = onGlass, fontSize = 13.sp)
@@ -836,9 +821,6 @@ private fun ProfileEditor(
                         udpgwEnabled = udpgwOn, udpgwHost = udpgwHost.ifBlank { "127.0.0.1" },
                         udpgwPort = udpgwPort.toIntOrNull() ?: 7300,
                         mode = mode,
-                        dnsttDomain = dnsttDomain.trim(), dnsttPubKey = dnsttPubKey.trim(),
-                        dnsttResolver = dnsttResolver.ifBlank { "1.1.1.1:53" },
-                        hyObfs = hyObfs, hySni = hySni.trim(), hyInsecure = hyInsecure,
                         xrayProtocol = xrProto, xrayUuid = xrUuid.trim(), xrayPassword = xrPassword,
                         xrayMethod = xrMethod.trim().ifBlank { "aes-256-gcm" }, xrayFlow = xrFlow.trim(),
                         xraySecurity = xrSecurity, xraySni = xrSni.trim(), xrayFingerprint = xrFingerprint.trim().ifBlank { "chrome" },
@@ -846,6 +828,7 @@ private fun ProfileEditor(
                         xraySpiderX = xrSpiderX.trim(), xrayNetwork = xrNetwork, xrayWsPath = xrWsPath.ifBlank { "/" },
                         xrayWsHost = xrWsHost.trim(), xrayGrpcService = xrGrpcService.trim(),
                         xrayAlterId = xrAlterId.toIntOrNull() ?: 0, xrayVmessSecurity = xrVmessSecurity.trim().ifBlank { "auto" },
+                        xrayInsecure = xrInsecure,
                     ),
                 )
             },
@@ -998,7 +981,7 @@ private fun SettingsScreen(
 
         Spacer(Modifier.height(8.dp))
         Text(
-            "TunnelKu v0.4.1 · id.tunnelku\nIkon: Font Awesome Free 6.5.2 (CC BY 4.0).\nAplikasi tunnel versi kita sendiri — clean-room, tanpa server bawaan, tanpa iklan/tracker. Semua server dari profilmu.",
+            "TunnelKu v0.5.0 · id.tunnelku\nIkon: Font Awesome Free 6.5.2 (CC BY 4.0).\nAplikasi tunnel versi kita sendiri — clean-room, tanpa server bawaan, tanpa iklan/tracker. Semua server dari profilmu.",
             color = onGlass.copy(alpha = 0.8f), fontSize = 11.sp,
         )
         Spacer(Modifier.height(16.dp))

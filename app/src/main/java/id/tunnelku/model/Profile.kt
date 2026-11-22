@@ -54,6 +54,7 @@ data class SshProfile(
     val xrayGrpcService: String = "",
     val xrayAlterId: Int = 0,
     val xrayVmessSecurity: String = "auto",
+    val xrayInsecure: Boolean = false, // izinkan sertifikat TLS tidak tepercaya (allowInsecure)
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("name", name); put("host", host); put("port", port)
@@ -75,7 +76,7 @@ data class SshProfile(
         put("xrayPublicKey", xrayPublicKey); put("xrayShortId", xrayShortId); put("xraySpiderX", xraySpiderX)
         put("xrayNetwork", xrayNetwork); put("xrayWsPath", xrayWsPath); put("xrayWsHost", xrayWsHost)
         put("xrayGrpcService", xrayGrpcService); put("xrayAlterId", xrayAlterId)
-        put("xrayVmessSecurity", xrayVmessSecurity)
+        put("xrayVmessSecurity", xrayVmessSecurity); put("xrayInsecure", xrayInsecure)
     }
 
     companion object {
@@ -132,6 +133,7 @@ data class SshProfile(
             xrayGrpcService = o.optString("xrayGrpcService", ""),
             xrayAlterId = o.optInt("xrayAlterId", 0),
             xrayVmessSecurity = o.optString("xrayVmessSecurity", "auto"),
+            xrayInsecure = o.optBoolean("xrayInsecure", false),
         )
     }
 }

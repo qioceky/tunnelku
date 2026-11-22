@@ -13,8 +13,8 @@ import id.tunnelku.MainActivity
 import id.tunnelku.R
 import id.tunnelku.model.ProfileStore
 import id.tunnelku.model.SettingsStore
-import engine.Engine
 import id.tunnelku.model.SshProfile
+import id.tunnelku.xray.XraySocksServer
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import kotlin.concurrent.thread
@@ -26,9 +26,6 @@ class TunnelVpnService : VpnService() {
         const val ACTION_DISCONNECT = "id.tunnelku.ACTION_DISCONNECT"
         private const val CHANNEL_ID = "tunnelku_tunnel"
         private const val NOTIF_ID = 41
-        private const val SOCKS_PORT = 11080
-        private const val DNSTT_PORT = 11081
-        private const val XRAY_SOCKS_PORT = 11082
         @Volatile var instance: TunnelVpnService? = null
     }
 
@@ -37,9 +34,7 @@ class TunnelVpnService : VpnService() {
     private var tunFd: ParcelFileDescriptor? = null
     private var ssh: SshTunnel? = null
     private var forwarder: TunForwarder? = null
-    @Volatile private var engineDnstt = false
-    @Volatile private var engineHysteria = false
-    @Volatile private var engineXray = false
+    private var xrayServer: XraySocksServer? = null
     private var udpgwProvider: UdpGwRelayProvider? = null
     private var socksUdpRelay: SocksUdpRelay? = null
     private var worker: Thread? = null
@@ -115,37 +110,18 @@ class TunnelVpnService : VpnService() {
         val aliveCheck: () -> Boolean
 
         when (profile.mode) {
-            SshProfile.MODE_UDP_CUSTOM -> {
-                LogBus.log("Menghubungkan (UDP Custom): ${profile.name} (${profile.host}:${profile.port})")
-                Engine.startHysteria(
-                    "${profile.host}:${profile.port}",
-                    "${profile.username}:${profile.password}",
-                    profile.hyObfs, profile.hySni, profile.hyInsecure,
-                    "127.0.0.1:$SOCKS_PORT",
-                )
-                engineHysteria = true
-                LogBus.log("Mesin Hysteria (UDP Custom) tersambung, SOCKS5 lokal :$SOCKS_PORT")
-                transport = SocksStreamTransport(SOCKS_PORT)
-                val relay = SocksUdpRelay(
-                    SOCKS_PORT,
-                    { s -> protect(s) },
-                    { srcIp, srcPort, dstIp, dstPort, payload ->
-                        // Balasan UDP: tulis kembali ke TUN lewat forwarder.
-                        forwarder?.injectUdpReply(srcIp, srcPort, dstIp, dstPort, payload)
-                    },
-                ) { LogBus.log(it) }
-                socksUdpRelay = relay
-                udpProvider = { relay }
-                aliveCheck = { engineHysteria }
-            }
             SshProfile.MODE_XRAY -> {
                 LogBus.log("Menghubungkan (Xray/${profile.xrayProtocol}): ${profile.name} (${profile.host}:${profile.port})")
-                Engine.startXray(XraySupport.buildParamsJson(profile, XRAY_SOCKS_PORT))
-                engineXray = true
-                LogBus.log("Core Xray aktif, SOCKS5 lokal :$XRAY_SOCKS_PORT")
-                transport = SocksStreamTransport(XRAY_SOCKS_PORT)
+                val server = XraySocksServer(
+                    profile,
+                    { s -> protect(s) },
+                    { s -> protect(s) },
+                ) { LogBus.log(it) }
+                server.start()
+                xrayServer = server
+                transport = SocksStreamTransport(XraySocksServer.PORT)
                 val relay = SocksUdpRelay(
-                    XRAY_SOCKS_PORT,
+                    XraySocksServer.PORT,
                     { s -> protect(s) },
                     { srcIp, srcPort, dstIp, dstPort, payload ->
                         forwarder?.injectUdpReply(srcIp, srcPort, dstIp, dstPort, payload)
@@ -153,24 +129,10 @@ class TunnelVpnService : VpnService() {
                 ) { LogBus.log(it) }
                 socksUdpRelay = relay
                 udpProvider = { relay }
-                aliveCheck = { engineXray }
+                aliveCheck = { server.alive }
             }
-            SshProfile.MODE_SLOWDNS -> {
-                LogBus.log("Menghubungkan (SlowDNS): ${profile.name} — resolver ${profile.dnsttResolver}, domain ${profile.dnsttDomain}")
-                Engine.startDNSTT(
-                    profile.dnsttResolver.ifBlank { "1.1.1.1:53" },
-                    profile.dnsttDomain,
-                    profile.dnsttPubKey,
-                    "127.0.0.1:$DNSTT_PORT",
-                )
-                engineDnstt = true
-                LogBus.log("Mesin DNSTT aktif, listener lokal :$DNSTT_PORT — membuka SSH di atasnya")
-                val tunnel = SshTunnel(profile, { s -> protect(s) }, { LogBus.log(it) }, viaLocalPort = DNSTT_PORT)
-                ssh = tunnel
-                tunnel.connect()
-                transport = SshStreamTransport(tunnel)
-                udpProvider = sshUdpProvider(profile, tunnel)
-                aliveCheck = { tunnel.isConnected }
+            SshProfile.MODE_SLOWDNS, SshProfile.MODE_UDP_CUSTOM -> {
+                throw IllegalStateException("Mode ${profile.mode} sudah tidak didukung sejak v0.5.0 — TunnelKu fokus SSH & Xray. Buat profil mode SSH atau Xray.")
             }
             else -> { // SSH
                 LogBus.log("Menghubungkan: ${profile.name} (${profile.host}:${profile.port})")
@@ -246,18 +208,8 @@ class TunnelVpnService : VpnService() {
         tunFd = null
         try { ssh?.disconnect() } catch (e: Exception) { /* abaikan */ }
         ssh = null
-        if (engineDnstt) {
-            try { Engine.stopDNSTT() } catch (e: Exception) { /* abaikan */ }
-            engineDnstt = false
-        }
-        if (engineHysteria) {
-            try { Engine.stopHysteria() } catch (e: Exception) { /* abaikan */ }
-            engineHysteria = false
-        }
-        if (engineXray) {
-            try { Engine.stopXray() } catch (e: Exception) { /* abaikan */ }
-            engineXray = false
-        }
+        try { xrayServer?.stop() } catch (e: Exception) { /* abaikan */ }
+        xrayServer = null
     }
 
     private fun stopTunnel() {

@@ -5,34 +5,8 @@ import id.tunnelku.model.SshProfile
 import org.json.JSONObject
 import java.net.URLDecoder
 
-/** Pembangun parameter Xray (skema datar untuk mesin Go) + parser link berbagi. */
+/** Parser link berbagi Xray (vless/vmess/trojan/ss) menjadi profil mode XRAY. */
 object XraySupport {
-
-    fun buildParamsJson(p: SshProfile, socksPort: Int): String {
-        val o = JSONObject()
-        o.put("protocol", p.xrayProtocol)
-        o.put("address", p.host)
-        o.put("port", p.port)
-        o.put("id", p.xrayUuid)
-        o.put("password", p.xrayPassword)
-        o.put("method", p.xrayMethod)
-        o.put("alterId", p.xrayAlterId)
-        o.put("vmessSecurity", p.xrayVmessSecurity)
-        o.put("flow", p.xrayFlow)
-        o.put("network", p.xrayNetwork)
-        o.put("security", p.xraySecurity)
-        o.put("sni", p.xraySni)
-        o.put("fingerprint", p.xrayFingerprint)
-        o.put("alpn", p.xrayAlpn)
-        o.put("publicKey", p.xrayPublicKey)
-        o.put("shortId", p.xrayShortId)
-        o.put("spiderX", p.xraySpiderX)
-        o.put("wsPath", p.xrayWsPath)
-        o.put("wsHost", p.xrayWsHost)
-        o.put("grpcService", p.xrayGrpcService)
-        o.put("socksPort", socksPort)
-        return o.toString()
-    }
 
     /** Parse link vless://, vmess://, trojan://, ss:// menjadi profil mode XRAY. Null bila tak dikenal. */
     fun parseShareLink(raw: String, base: SshProfile): SshProfile? {

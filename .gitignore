@@ -3,8 +3,7 @@ build/
 app/build/
 local.properties
 *.keystore
-engine/dnstt-src/
-engine/hysteria-src/
-app/libs/*.aar
+host-test/go-ref/refcheck
+host-test/go-ws/gows
 research/
 verify-v*/

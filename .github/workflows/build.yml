@@ -53,39 +53,6 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "Keystore tetap dipulihkan ($(stat -c%s "$HOME/.android/tunnelku.keystore") byte)."
 
-      - name: Setup Go 1.20 (mesin DNSTT + Hysteria)
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.20.14'
-
-      - name: Ambil sumber resmi dnstt & hysteria + bangun engine.aar (gomobile)
-        run: |
-          set -euo pipefail
-          cd engine
-          git clone --quiet https://www.bamsoftware.com/git/dnstt.git dnstt-src
-          rm -rf dnstt-src/.git
-          sed -i 's/^go 1.21$/go 1.20/' dnstt-src/go.mod
-          sed -i 's#github.com/xtaci/kcp-go/v5 v5.6.8#github.com/xtaci/kcp-go/v5 v5.6.1#; s#github.com/xtaci/smux v1.5.24#github.com/xtaci/smux v1.5.19#' dnstt-src/go.mod
-          git clone --quiet --depth 1 --branch v1.3.5 https://github.com/apernet/hysteria.git hysteria-src
-          rm -rf hysteria-src/.git
-          export GOPATH="$HOME/go"
-          mkdir -p "$GOPATH/bin"
-          git clone --quiet https://github.com/golang/mobile.git "$HOME/mobile-src"
-          git -C "$HOME/mobile-src" checkout --quiet 3c911d8e3edae4ddeea7f8a6e3ea9eae74f1a81a
-          (cd "$HOME/mobile-src" && go build -o "$GOPATH/bin/gomobile" ./cmd/gomobile && go build -o "$GOPATH/bin/gobind" ./cmd/gobind)
-          export PATH="$GOPATH/bin:$PATH"
-          export ANDROID_NDK_HOME=$(ls -d "$ANDROID_HOME"/ndk/* | sort -V | tail -1)
-          echo "NDK: $ANDROID_NDK_HOME"
-          GOFLAGS=-mod=mod go mod tidy
-          mkdir -p ../app/libs
-          gomobile bind -target=android/arm64,android/arm -androidapi 26 -o ../app/libs/engine.aar .
-          ls -lh ../app/libs/engine.aar
-          unzip -l ../app/libs/engine.aar | head -25
-          mkdir -p /tmp/aarx && cd /tmp/aarx && unzip -o -q "$GITHUB_WORKSPACE/app/libs/engine.aar" classes.jar && "$JAVA_HOME/bin/jar" tf classes.jar | head -20
-
-      - name: Debug classpath engine
-        run: ./gradlew :app:dependencies --configuration releaseCompileClasspath 2>/dev/null | grep -i -A2 -B2 engine || true
-
       - name: Build release APK
         run: ./gradlew :app:assembleRelease --stacktrace
 
