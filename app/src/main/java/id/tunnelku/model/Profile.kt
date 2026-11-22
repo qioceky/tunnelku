@@ -26,6 +26,9 @@ data class SshProfile(
     val sniHost: String = "",
     val dns: String = "1.1.1.1",
     val mtu: Int = 1400,
+    val udpgwEnabled: Boolean = true,
+    val udpgwHost: String = "127.0.0.1",
+    val udpgwPort: Int = 7300,
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("name", name); put("host", host); put("port", port)
@@ -37,6 +40,7 @@ data class SshProfile(
         put("payloadEnabled", payloadEnabled); put("payload", payload)
         put("sniEnabled", sniEnabled); put("sniHost", sniHost)
         put("dns", dns); put("mtu", mtu)
+        put("udpgwEnabled", udpgwEnabled); put("udpgwHost", udpgwHost); put("udpgwPort", udpgwPort)
     }
 
     companion object {
@@ -60,6 +64,9 @@ data class SshProfile(
             sniHost = o.optString("sniHost", ""),
             dns = o.optString("dns", "1.1.1.1"),
             mtu = o.optInt("mtu", 1400),
+            udpgwEnabled = o.optBoolean("udpgwEnabled", true),
+            udpgwHost = o.optString("udpgwHost", "127.0.0.1"),
+            udpgwPort = o.optInt("udpgwPort", 7300),
         )
     }
 }

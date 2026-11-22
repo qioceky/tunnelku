@@ -235,7 +235,7 @@ fun TunnelKuApp(onBgModeChanged: () -> Unit) {
                         .border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape)
                         .padding(horizontal = 8.dp, vertical = 3.dp),
                 ) {
-                    Text("v0.1.1 · SSH", color = onGlass, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    Text("v0.2 · SSH", color = onGlass, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -480,7 +480,7 @@ private fun HomeScreen(onGlass: Color, glass: Float, goProfiles: () -> Unit) {
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            "Mode SSH v0.1: payload kustom, proxy HTTP/SOCKS5, SNI/TLS, private key. UDP selain DNS menyusul v0.2.",
+            "Mode SSH v0.2: payload kustom, proxy HTTP/SOCKS5, SNI/TLS, private key, UDP penuh via UDPGW.",
             color = onGlass.copy(alpha = 0.8f), fontSize = 11.sp,
         )
     }
@@ -575,6 +575,9 @@ private fun ProfileEditor(
     var sniHost by remember { mutableStateOf(base.sniHost) }
     var dns by remember { mutableStateOf(base.dns) }
     var mtu by remember { mutableStateOf(base.mtu.toString()) }
+    var udpgwOn by remember { mutableStateOf(base.udpgwEnabled) }
+    var udpgwHost by remember { mutableStateOf(base.udpgwHost) }
+    var udpgwPort by remember { mutableStateOf(base.udpgwPort.toString()) }
 
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(if (initial == null) "Profil SSH Baru" else "Ubah Profil", color = onGlass, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
@@ -625,6 +628,17 @@ private fun ProfileEditor(
         }
         GlassTextField(dns, { dns = it }, "DNS di dalam tunnel", onGlass)
         GlassTextField(mtu, { mtu = it }, "MTU TUN", onGlass, numeric = true)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("UDP penuh (UDPGW)", color = onGlass, fontSize = 13.sp)
+                Text("UDP untuk game/VoIP lewat BadVPN udpgw di server SSH", color = onGlass.copy(alpha = 0.8f), fontSize = 11.sp)
+            }
+            Switch(udpgwOn, { udpgwOn = it })
+        }
+        if (udpgwOn) {
+            GlassTextField(udpgwHost, { udpgwHost = it }, "Host UDPGW (dari sisi server SSH)", onGlass)
+            GlassTextField(udpgwPort, { udpgwPort = it }, "Port UDPGW", onGlass, numeric = true)
+        }
 
         Spacer(Modifier.height(4.dp))
         Button(
@@ -640,6 +654,8 @@ private fun ProfileEditor(
                         payloadEnabled = payloadOn, payload = payload,
                         sniEnabled = sniOn, sniHost = sniHost.trim(),
                         dns = dns.ifBlank { "1.1.1.1" }, mtu = mtu.toIntOrNull() ?: 1400,
+                        udpgwEnabled = udpgwOn, udpgwHost = udpgwHost.ifBlank { "127.0.0.1" },
+                        udpgwPort = udpgwPort.toIntOrNull() ?: 7300,
                     ),
                 )
             },
@@ -792,7 +808,7 @@ private fun SettingsScreen(
 
         Spacer(Modifier.height(8.dp))
         Text(
-            "TunnelKu v0.1.1 · id.tunnelku\nIkon: Font Awesome Free 6.5.2 (CC BY 4.0).\nAplikasi tunnel versi kita sendiri — clean-room, tanpa server bawaan, tanpa iklan/tracker. Semua server dari profilmu.",
+            "TunnelKu v0.2.0 · id.tunnelku\nIkon: Font Awesome Free 6.5.2 (CC BY 4.0).\nAplikasi tunnel versi kita sendiri — clean-room, tanpa server bawaan, tanpa iklan/tracker. Semua server dari profilmu.",
             color = onGlass.copy(alpha = 0.8f), fontSize = 11.sp,
         )
         Spacer(Modifier.height(16.dp))

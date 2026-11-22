@@ -12,8 +12,8 @@ import kotlin.random.Random
  * Mesin TUN -> SSH TunnelKu v0.1 (Java/Kotlin murni, tanpa native):
  * tumpukan TCP userspace sederhana di atas channel direct-tcpip JSch.
  * - TCP: state machine ringkas (SYN/DATA/FIN/RST), go-back-N untuk segmen tak urut.
- * - UDP: hanya DNS (port 53) yang diteruskan, lewat DNS-over-TCP di dalam SSH;
- *   UDP lain dibuang (UDP penuh via UDPGW menyusul di v0.2).
+ * - UDP: penuh via BadVPN UDPGW di dalam SSH (v0.2); bila UDPGW mati/tidak
+ *   tersedia, DNS (port 53) jatuh ke DNS-over-TCP dan UDP lain dibuang.
  * - IPv6: dibuang (route ::/0 diarahkan ke TUN agar tidak bocor keluar VPN).
  */
 class TunForwarder(
@@ -21,6 +21,8 @@ class TunForwarder(
     private val tunOut: OutputStream,
     private val ssh: SshTunnel,
     private val dnsServer: String,
+    private val udpgwHost: String?,
+    private val udpgwPort: Int,
     private val log: (String) -> Unit,
 ) {
     @Volatile private var running = false
@@ -65,11 +67,46 @@ class TunForwarder(
             }
         }
         thread(name = "tk-tun-reader", isDaemon = true) { readLoop() }
-        log("Mesin TUN aktif (DNS via $dnsServer, UDP selain DNS menyusul v0.2)")
+        log("Mesin TUN aktif (DNS via $dnsServer" + (if (udpgwHost != null) ", UDP via UDPGW $udpgwHost:$udpgwPort" else "") + ")")
+    }
+
+    @Volatile private var udpgw: UdpGwClient? = null
+    @Volatile private var udpgwNextTry = 0L
+
+    /** Ambil klien UDPGW yang hidup; sambungkan malas (lazy) bila perlu. Null = tidak tersedia. */
+    private fun udpGw(): UdpGwClient? {
+        val host = udpgwHost ?: return null
+        udpgw?.let { if (it.alive) return it }
+        val now = System.currentTimeMillis()
+        if (now < udpgwNextTry) return null
+        udpgwNextTry = now + 30_000
+        return try {
+            val channel = ssh.openStream(host, udpgwPort)
+            val client = UdpGwClient(
+                channel.outputStream, channel.inputStream,
+                onPacket = { srcIp, srcPort, dstIp, dstPort, payload ->
+                    sendUdpPacket(srcIp, srcPort, dstIp, dstPort, payload)
+                    LogBus.addTraffic(payload.size.toLong(), 0)
+                },
+                onDead = { reason ->
+                    log("UDPGW putus: $reason — UDP jatuh ke mode DNS-saja")
+                    udpgw = null
+                },
+                log = log,
+            )
+            client.start()
+            udpgw = client
+            client
+        } catch (e: Exception) {
+            log("UDPGW tidak tersedia ($host:$udpgwPort): ${e.message} — UDP mode DNS-saja")
+            null
+        }
     }
 
     fun stop() {
         running = false
+        try { udpgw?.close() } catch (e: Exception) { /* abaikan */ }
+        udpgw = null
         flows.values.forEach { closeFlow(it, sendRst = false) }
         flows.clear()
         writeQueue.offer(ByteArray(0))
@@ -297,7 +334,7 @@ class TunForwarder(
         writeQueue.offer(pkt)
     }
 
-    // ---------------- UDP (DNS saja) ----------------
+    // ---------------- UDP (UDPGW penuh; fallback DNS-over-TCP) ----------------
 
     private fun handleUdp(pkt: ByteArray, ihl: Int, totalLen: Int, srcIp: Int, dstIp: Int) {
         if (totalLen < ihl + 8) return
@@ -306,14 +343,21 @@ class TunForwarder(
         val udpLen = u16(pkt, ihl + 4)
         val payloadOff = ihl + 8
         val payloadLen = (minOf(totalLen, ihl + udpLen) - payloadOff).coerceAtLeast(0)
+        val payload = pkt.copyOfRange(payloadOff, payloadOff + payloadLen)
+        val gw = udpGw()
+        if (gw != null) {
+            gw.send(srcIp, srcPort, dstIp, dstPort, payload, isDns = dstPort == 53)
+            LogBus.addTraffic(0, payloadLen.toLong())
+            return
+        }
         if (dstPort != 53) {
             if (!udpDropLogged) {
                 udpDropLogged = true
-                log("UDP non-DNS dibuang (v0.1) — UDP penuh menyusul di v0.2")
+                log("UDP non-DNS dibuang — UDPGW tidak tersedia di server SSH ini")
             }
             return
         }
-        val query = pkt.copyOfRange(payloadOff, payloadOff + payloadLen)
+        val query = payload
         LogBus.addTraffic(0, payloadLen.toLong())
         thread(name = "tk-dns", isDaemon = true) {
             try {

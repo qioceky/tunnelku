@@ -128,6 +128,8 @@ class TunnelVpnService : VpnService() {
             FileOutputStream(fd.fileDescriptor),
             tunnel,
             profile.dns.ifBlank { "1.1.1.1" },
+            if (profile.udpgwEnabled) profile.udpgwHost.ifBlank { "127.0.0.1" } else null,
+            profile.udpgwPort,
         ) { LogBus.log(it) }
         forwarder = fwd
         fwd.start()
