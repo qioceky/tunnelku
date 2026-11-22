@@ -69,7 +69,10 @@ jobs:
           git clone --quiet --depth 1 --branch v1.3.5 https://github.com/apernet/hysteria.git hysteria-src
           rm -rf hysteria-src/.git
           export GOPATH="$HOME/go"
-          go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20230531173138-7d161ad47618
+          mkdir -p "$GOPATH/bin"
+          git clone --quiet https://github.com/golang/mobile.git "$HOME/mobile-src"
+          git -C "$HOME/mobile-src" checkout --quiet 3c911d8e3edae4ddeea7f8a6e3ea9eae74f1a81a
+          (cd "$HOME/mobile-src" && go build -o "$GOPATH/bin/gomobile" ./cmd/gomobile && go build -o "$GOPATH/bin/gobind" ./cmd/gobind)
           export PATH="$GOPATH/bin:$PATH"
           export ANDROID_NDK_HOME=$(ls -d "$ANDROID_HOME"/ndk/* | sort -V | tail -1)
           echo "NDK: $ANDROID_NDK_HOME"
