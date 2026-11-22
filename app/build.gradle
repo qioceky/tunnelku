@@ -4,6 +4,10 @@ plugins {
     alias(libs.plugins.jetbrains.kotlin.compose)
 }
 
+repositories {
+    flatDir { dirs 'libs' }
+}
+
 android {
     namespace 'id.tunnelku'
     compileSdk 35
