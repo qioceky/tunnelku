@@ -83,6 +83,9 @@ jobs:
           unzip -l ../app/libs/engine.aar | head -25
           mkdir -p /tmp/aarx && cd /tmp/aarx && unzip -o -q "$GITHUB_WORKSPACE/app/libs/engine.aar" classes.jar && "$JAVA_HOME/bin/jar" tf classes.jar | head -20
 
+      - name: Debug classpath engine
+        run: ./gradlew :app:dependencies --configuration releaseCompileClasspath 2>/dev/null | grep -i -A2 -B2 engine || true
+
       - name: Build release APK
         run: ./gradlew :app:assembleRelease --stacktrace
 

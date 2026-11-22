@@ -13,6 +13,7 @@ import id.tunnelku.MainActivity
 import id.tunnelku.R
 import id.tunnelku.model.ProfileStore
 import id.tunnelku.model.SettingsStore
+import engine.Engine
 import id.tunnelku.model.SshProfile
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -114,7 +115,7 @@ class TunnelVpnService : VpnService() {
         when (profile.mode) {
             SshProfile.MODE_UDP_CUSTOM -> {
                 LogBus.log("Menghubungkan (UDP Custom): ${profile.name} (${profile.host}:${profile.port})")
-                engine.Engine.startHysteria(
+                Engine.startHysteria(
                     "${profile.host}:${profile.port}",
                     "${profile.username}:${profile.password}",
                     profile.hyObfs, profile.hySni, profile.hyInsecure,
@@ -137,7 +138,7 @@ class TunnelVpnService : VpnService() {
             }
             SshProfile.MODE_SLOWDNS -> {
                 LogBus.log("Menghubungkan (SlowDNS): ${profile.name} — resolver ${profile.dnsttResolver}, domain ${profile.dnsttDomain}")
-                engine.Engine.startDNSTT(
+                Engine.startDNSTT(
                     profile.dnsttResolver.ifBlank { "1.1.1.1:53" },
                     profile.dnsttDomain,
                     profile.dnsttPubKey,
@@ -227,11 +228,11 @@ class TunnelVpnService : VpnService() {
         try { ssh?.disconnect() } catch (e: Exception) { /* abaikan */ }
         ssh = null
         if (engineDnstt) {
-            try { engine.Engine.stopDNSTT() } catch (e: Exception) { /* abaikan */ }
+            try { Engine.stopDNSTT() } catch (e: Exception) { /* abaikan */ }
             engineDnstt = false
         }
         if (engineHysteria) {
-            try { engine.Engine.stopHysteria() } catch (e: Exception) { /* abaikan */ }
+            try { Engine.stopHysteria() } catch (e: Exception) { /* abaikan */ }
             engineHysteria = false
         }
     }
