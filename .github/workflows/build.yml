@@ -53,6 +53,9 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "Keystore tetap dipulihkan ($(stat -c%s "$HOME/.android/tunnelku.keystore") byte)."
 
+      - name: Unit test (XtquReader .xtqu, v0.7.0)
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+
       - name: Build release APK
         run: ./gradlew :app:assembleRelease --stacktrace
 

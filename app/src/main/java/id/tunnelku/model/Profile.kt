@@ -55,6 +55,8 @@ data class SshProfile(
     val xrayAlterId: Int = 0,
     val xrayVmessSecurity: String = "auto",
     val xrayInsecure: Boolean = false, // izinkan sertifikat TLS tidak tepercaya (allowInsecure)
+    /** Profil dikunci pembuatnya (impor .xtqu dengan hide* / locked): bisa dipakai & dihapus, tapi tidak bisa diedit. */
+    val lockedByCreator: Boolean = false,
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id); put("name", name); put("host", host); put("port", port)
@@ -77,6 +79,7 @@ data class SshProfile(
         put("xrayNetwork", xrayNetwork); put("xrayWsPath", xrayWsPath); put("xrayWsHost", xrayWsHost)
         put("xrayGrpcService", xrayGrpcService); put("xrayAlterId", xrayAlterId)
         put("xrayVmessSecurity", xrayVmessSecurity); put("xrayInsecure", xrayInsecure)
+        put("lockedByCreator", lockedByCreator)
     }
 
     companion object {
@@ -134,6 +137,7 @@ data class SshProfile(
             xrayAlterId = o.optInt("xrayAlterId", 0),
             xrayVmessSecurity = o.optString("xrayVmessSecurity", "auto"),
             xrayInsecure = o.optBoolean("xrayInsecure", false),
+            lockedByCreator = o.optBoolean("lockedByCreator", false),
         )
     }
 }

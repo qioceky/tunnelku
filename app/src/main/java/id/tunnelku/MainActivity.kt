@@ -1,5 +1,6 @@
 package id.tunnelku
 
+import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.VpnService
@@ -76,6 +77,8 @@ import id.tunnelku.ui.Fa
 import id.tunnelku.ui.FaIcon
 import id.tunnelku.model.SettingsStore
 import id.tunnelku.model.SshProfile
+import id.tunnelku.model.XtquException
+import id.tunnelku.model.XtquReader
 import id.tunnelku.vpn.LogBus
 import id.tunnelku.vpn.TunnelStatus
 import id.tunnelku.vpn.TunnelVpnService
@@ -120,6 +123,29 @@ private fun modeLabel(mode: String): String = when (mode) {
     SshProfile.MODE_XRAY -> "Xray"
     SshProfile.MODE_UDP_CUSTOM -> "UDP Custom"
     else -> "SSH"
+}
+
+/**
+ * Impor teks/file .xtqu ke ProfileStore (v0.7.0). Mengembalikan pesan hasil
+ * untuk Toast. Profil tidak lengkap / berpassword / kedaluwarsa ditolak
+ * dengan pesan jelas — tanpa retry, tanpa connect.
+ */
+private fun importXtquText(ctx: Context, text: String, password: String): String {
+    return try {
+        val result = XtquReader.importAll(text, password)
+        val list = ProfileStore.load(ctx)
+        list.addAll(result.imported)
+        ProfileStore.save(ctx, list)
+        if (ProfileStore.activeId(ctx) == null && result.imported.isNotEmpty()) {
+            ProfileStore.setActiveId(ctx, result.imported.first().id)
+        }
+        val skipped = if (result.skippedExpired > 0) " (${result.skippedExpired} profil kedaluwarsa dilewati)" else ""
+        "${result.imported.size} profil .xtqu diimpor$skipped"
+    } catch (e: XtquException) {
+        e.message ?: "Gagal mengimpor .xtqu"
+    } catch (e: Exception) {
+        "Gagal mengimpor .xtqu: ${e.message}"
+    }
 }
 
 private fun fmtBytes(n: Long): String = when {
@@ -242,7 +268,7 @@ fun TunnelKuApp(onBgModeChanged: () -> Unit) {
                         .border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape)
                         .padding(horizontal = 8.dp, vertical = 3.dp),
                 ) {
-                    Text("v0.6.1", color = onGlass, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                    Text("v0.7.0", color = onGlass, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -592,6 +618,19 @@ private fun ProfileEditor(
     var udpgwHost by remember { mutableStateOf(base.udpgwHost) }
     var udpgwPort by remember { mutableStateOf(base.udpgwPort.toString()) }
     var importLink by remember { mutableStateOf("") }
+    var xtquText by remember { mutableStateOf("") }
+    var xtquPassword by remember { mutableStateOf("") }
+    // Pilih file .xtqu — pakai pola OpenDocument() yang sama seperti gambar latar.
+    val xtquFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            try {
+                val text = ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
+                Toast.makeText(ctx, importXtquText(ctx, text, xtquPassword), Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(ctx, "Gagal membaca file: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
     var xrProto by remember { mutableStateOf(base.xrayProtocol) }
     var xrUuid by remember { mutableStateOf(base.xrayUuid) }
     var xrPassword by remember { mutableStateOf(base.xrayPassword) }
@@ -614,6 +653,12 @@ private fun ProfileEditor(
 
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(if (initial == null) "Profil Baru" else "Ubah Profil", color = onGlass, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+        if (base.lockedByCreator) {
+            Text(
+                "Profil ini dikunci pembuatnya — bisa dipakai, tapi tidak bisa diubah. Hapus lalu impor ulang bila perlu.",
+                color = Color(0xFFFFC44D), fontSize = 12.sp, fontWeight = FontWeight.Bold,
+            )
+        }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf(
                 SshProfile.MODE_SSH to "SSH",
@@ -637,6 +682,31 @@ private fun ProfileEditor(
             },
             color = onGlass.copy(alpha = 0.85f), fontSize = 11.sp,
         )
+        // ---- Impor config .xtqu (v0.7.0) — tempel teks atau pilih file; semua profil diimpor sekaligus. ----
+        GlassTextField(xtquText, { xtquText = it }, "Tempel teks .xtqu (tunnelku://XTQ1:… atau XTQ1:…)", onGlass, singleLine = false, minLines = 2)
+        GlassTextField(xtquPassword, { xtquPassword = it }, "Password .xtqu (isi bila config berpassword)", onGlass, password = true)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(
+                Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.25f))
+                    .border(1.dp, Color.White.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                    .clickable {
+                        if (xtquText.isBlank()) {
+                            Toast.makeText(ctx, "Tempel dulu teks .xtqu-nya", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(ctx, importXtquText(ctx, xtquText, xtquPassword), Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    .padding(horizontal = 14.dp, vertical = 9.dp),
+                contentAlignment = Alignment.Center,
+            ) { Text("Impor .xtqu", color = onGlass, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+            Box(
+                Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.25f))
+                    .border(1.dp, Color.White.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                    .clickable { xtquFileLauncher.launch(arrayOf("*/*")) }
+                    .padding(horizontal = 14.dp, vertical = 9.dp),
+                contentAlignment = Alignment.Center,
+            ) { Text("Pilih File .xtqu", color = onGlass, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+        }
         GlassTextField(name, { name = it }, "Nama profil", onGlass)
         GlassTextField(host, { host = it }, if (mode == SshProfile.MODE_XRAY) "Host server" else "Host SSH", onGlass)
         GlassTextField(port, { port = it }, "Port", onGlass, numeric = true)
@@ -834,6 +904,7 @@ private fun ProfileEditor(
                     ),
                 )
             },
+            enabled = !base.lockedByCreator,
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0A162C).copy(alpha = 0.85f), contentColor = Color.White),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth().height(50.dp),
@@ -983,7 +1054,7 @@ private fun SettingsScreen(
 
         Spacer(Modifier.height(8.dp))
         Text(
-            "TunnelKu v0.6.1 · id.tunnelku\nIkon: Font Awesome Free 6.5.2 (CC BY 4.0).\nAplikasi tunnel versi kita sendiri — clean-room, tanpa server bawaan, tanpa iklan/tracker. Semua server dari profilmu.",
+            "TunnelKu v0.7.0 · id.tunnelku\nIkon: Font Awesome Free 6.5.2 (CC BY 4.0).\nAplikasi tunnel versi kita sendiri — clean-room, tanpa server bawaan, tanpa iklan/tracker. Semua server dari profilmu.",
             color = onGlass.copy(alpha = 0.8f), fontSize = 11.sp,
         )
         Spacer(Modifier.height(16.dp))
